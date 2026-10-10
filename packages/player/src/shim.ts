@@ -4,22 +4,31 @@
 // gives the app a private localStorage seeded from the take, puts the page on
 // the recorded path, and only then starts the app's module scripts (`tape
 // bundle` made them inert). After that it waits for ticks from the parent and
-// delivers whatever is due. What the app sends goes nowhere.
+// delivers whatever is due: server frames, and the recorded input as DOM
+// events (./input.ts). What the app sends goes nowhere.
 
 import { base64ToBytes, type Scene, type SceneFrame } from "@nustackdev/tape-scene";
+import { installFocus } from "./focus";
+import { InputPlayer } from "./input";
 import { type Body, isTape, TAG, type ToParent, type ToShim } from "./protocol";
+import { installPseudo } from "./pseudo";
 
 const DEFERRED_TYPE = "text/x-tape-module";
 
 declare global {
 	interface Window {
-		__tapeShim?: boolean;
+		/** Where the replay is, for tests and debugging. */
+		__tapeShim?: { readonly now: number };
 	}
 }
 
 (() => {
 	if (window.__tapeShim) return;
-	window.__tapeShim = true;
+	window.__tapeShim = {
+		get now() {
+			return now;
+		},
+	};
 
 	const post = (m: Body<ToParent>) => window.parent.postMessage({ tape: TAG, ...m }, "*");
 
@@ -181,9 +190,27 @@ declare global {
 		configurable: true,
 		writable: true,
 	});
+	// Before the app runs, so nothing it focuses can take focus off the page around it.
+	installFocus();
+	// A replayed click or submit must never navigate the replay away. Bubble phase on
+	// window runs last, so the app's own handlers had their say.
+	window.addEventListener("click", (e) => {
+		if (!e.isTrusted && !e.defaultPrevented && (e.target as Element)?.closest?.("a[href]")) {
+			e.preventDefault();
+		}
+	});
+	window.addEventListener("submit", (e) => e.preventDefault());
 
-	const boot = (s: Scene) => {
+	/** How long recorded navigation waits for the replayed input to cause it before forcing it. */
+	const NAV_GRACE_MS = 300;
+	let input: InputPlayer | null = null;
+	let ev = 0;
+	let ptr = -1;
+
+	const boot = (s: Scene, withInput: boolean) => {
 		scene = s;
+		if (withInput && s.events?.length) input = new InputPlayer(document);
+		installPseudo(document);
 		byS = s.sockets.map(() => []);
 		for (const frame of s.frames) {
 			byS[frame.s]?.push({ frame, data: frame.x ? frame.d : base64ToBytes(frame.d) });
@@ -217,9 +244,24 @@ declare global {
 	const tick = (t: number) => {
 		if (!scene) return;
 		now = t;
+		// Input waits for the app's first socket: before that there is nothing on screen to act on.
+		if (input && opened) {
+			const events = scene.events ?? [];
+			const track = scene.pointer;
+			while (ev < events.length) {
+				const e = events[ev];
+				if (!e || e.t > now) break;
+				ev++;
+				input.play(e);
+			}
+			ptr = InputPlayer.seek(track, ptr, now);
+			const p = track[ptr];
+			if (p && p[3] !== 3) input.move(p[1], p[2]);
+		}
 		while (nav < scene.nav.length) {
 			const n = scene.nav[nav];
-			if (!n || n.t > now) break;
+			// With input, the replayed click usually navigates by itself. Recorded nav is the fallback.
+			if (!n || n.t + (input ? NAV_GRACE_MS : 0) > now) break;
 			nav++;
 			if (location.pathname + location.search + location.hash === n.path) continue;
 			try {
@@ -234,7 +276,7 @@ declare global {
 	window.addEventListener("message", (ev) => {
 		if (ev.source !== window.parent || !isTape<ToShim>(ev.data)) return;
 		const m = ev.data;
-		if (m.type === "scene" && !scene) boot(m.scene);
+		if (m.type === "scene" && !scene) boot(m.scene, m.input);
 		else if (m.type === "tick") tick(m.t);
 	});
 

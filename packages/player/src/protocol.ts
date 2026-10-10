@@ -9,7 +9,8 @@ import type { Scene } from "@nustackdev/tape-scene";
 export const TAG = "tape";
 
 export type ToShim =
-	| { tape: typeof TAG; type: "scene"; scene: Scene }
+	/** `input`: feed recorded input into the app too, not just server frames. */
+	| { tape: typeof TAG; type: "scene"; scene: Scene; input: boolean }
 	/** Deliver everything up to `t`. */
 	| { tape: typeof TAG; type: "tick"; t: number };
 

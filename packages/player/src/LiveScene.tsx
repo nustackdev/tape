@@ -6,8 +6,9 @@
 // With reduced motion it shows the last frame, still.
 //
 // The app runs in an iframe at the recorded viewport size and is scaled to
-// fit, so its layout is exactly the recorded one. The iframe is inert: it
-// never takes the pointer or focus. The cursor is drawn over it.
+// fit, so its layout is exactly the recorded one. The viewer can't reach into
+// it: no pointer, not in the tab order, focus inside it is pretended. The
+// cursor is drawn over it.
 
 import { parseScene, playWindow, type Scene } from "@nustackdev/tape-scene";
 import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from "react";
@@ -28,6 +29,8 @@ export interface LiveSceneProps {
 	hold?: number;
 	speed?: number;
 	cursor?: boolean;
+	/** Replay recorded input into the app too, so local UI plays: menus, typing, hover. Default true. */
+	input?: boolean;
 	/** Accessible description of what the scene shows. */
 	label?: string;
 	/** Behind the frame until it is ready. Empty by default. */
@@ -69,6 +72,7 @@ export function LiveScene({
 	hold = 2500,
 	speed = 1,
 	cursor = true,
+	input = true,
 	label,
 	placeholder,
 	className,
@@ -179,7 +183,7 @@ export function LiveScene({
 		const onMessage = (ev: MessageEvent) => {
 			if (ev.source !== win || !isTape<ToParent>(ev.data)) return;
 			const m = ev.data;
-			if (m.type === "hello") send({ type: "scene", scene });
+			if (m.type === "hello") send({ type: "scene", scene, input });
 			else if (m.type === "open" && !clock) {
 				t = Math.max(start, scene.sockets[0]?.open ?? 0);
 				if (still) {
@@ -202,7 +206,7 @@ export function LiveScene({
 			cancelAnimationFrame(raf);
 			clearTimeout(restart);
 		};
-	}, [scene, run, loop, hold, speed]);
+	}, [scene, run, loop, hold, speed, input]);
 
 	const vp = scene?.meta.viewport;
 	return (
@@ -235,7 +239,6 @@ export function LiveScene({
 						title={label ?? "live scene"}
 						aria-hidden
 						tabIndex={-1}
-						inert
 						style={{
 							width: vp.width,
 							height: vp.height,

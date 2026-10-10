@@ -52,11 +52,21 @@ The frame has a fixed aspect, empty until the replay is on screen, so nothing sh
 ## What replays
 
 - every server frame, on its recorded time, per socket. sockets are matched by url in open order, so a reconnect in the take replays as one
-- client side navigation (history push, replace, pop)
+- the input, as DOM events fed into the app: clicks, keys, drags, scrolls. so local UI plays too: menus open, fields fill, hover buttons show
+- client side navigation, as a fallback when the replayed click didn't cause it
 - localStorage at load, as a private copy
 - the pointer, as a drawn cursor with click ripples
 
-What the app sends goes nowhere. Local only UI state (hover, scroll, a menu the server never heard about) does not replay.
+Browsers don't let a script do everything a real user does, so the shim fills in:
+
+- **focus** is pretended. real focus in the iframe would pull it off the page around it, so `focus()` and `activeElement` are patched and focus events fire by hand
+- **hover and focus styles** come from copies of the app's `:hover` and `:focus` rules, keyed to attributes the shim sets
+- **typing** is done by hand after each unhandled keydown, and fields are reset to their recorded value as they go
+- **scroll** positions are recorded and set, pointer capture is patched for drags
+
+What the app sends goes nowhere. Links and form submits never navigate the replay. `input={false}` on `<LiveScene>` plays server frames only.
+
+The recorder logs every key, so record in a session with nothing secret in it.
 
 ## Develop
 
