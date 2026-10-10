@@ -214,7 +214,11 @@ export class InputPlayer {
 					...mods(e.m),
 				};
 				const go = target.dispatchEvent(new KeyboardEvent(e.k, init));
-				if (e.k === "keydown" && go && !(e.m & (2 | 4 | 8))) this.edit(target, e.key);
+				// The text goes where focus is now: a keydown handler may have moved it, and in a
+				// browser the key then types into the new place.
+				if (e.k === "keydown" && go && !(e.m & (2 | 4 | 8))) {
+					this.edit(activeElement() ?? doc.body, e.key);
+				}
 				return;
 			}
 			case "scroll": {

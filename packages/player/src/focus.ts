@@ -52,6 +52,11 @@ export function setFocus(el: Element | null, byScript = false): void {
 		old.dispatchEvent(new FocusEvent("focusout", { bubbles: true, relatedTarget: el }));
 	}
 	if (el) {
+		// Focusing an editable moves the selection into it, as a browser does, unless it is in there already.
+		if (el instanceof HTMLElement && el.isContentEditable) {
+			const sel = el.ownerDocument.getSelection();
+			if (sel && !(sel.anchorNode && el.contains(sel.anchorNode))) sel.collapse(el, 0);
+		}
 		el.setAttribute(FOCUS_ATTR, "");
 		if (showsFocus(el) || (byScript && wasVisible)) el.setAttribute(FOCUS_VISIBLE_ATTR, "");
 		for (const e of chain(el)) e.setAttribute(FOCUS_WITHIN_ATTR, "");
