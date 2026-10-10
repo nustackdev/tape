@@ -204,7 +204,7 @@ declare global {
 	});
 	// Before the app runs, so nothing it focuses can take focus off the page around it.
 	installFocus();
-	// Nor scroll the page around it.
+	// Nor scroll the page around it, by scrollIntoView or by an edit.
 	installScroll();
 	// A replayed click or submit must never navigate the replay away. Bubble phase on
 	// window runs last, so the app's own handlers had their say.

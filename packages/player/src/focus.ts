@@ -113,6 +113,22 @@ export function installFocus(): void {
 		Object.defineProperty(proto, "focus", { value: focus, configurable: true, writable: true });
 		Object.defineProperty(proto, "blur", { value: blur, configurable: true, writable: true });
 	}
+	// select() focuses the field for real, which would pull the frame into focus: the
+	// page's caret and keys would go to it, and browsers scroll the page to its caret.
+	for (const proto of [HTMLInputElement.prototype, HTMLTextAreaElement.prototype]) {
+		Object.defineProperty(proto, "select", {
+			configurable: true,
+			writable: true,
+			value(this: HTMLInputElement | HTMLTextAreaElement) {
+				setFocus(this, true);
+				try {
+					this.setSelectionRange(0, this.value.length);
+				} catch {
+					// A type with no text selection (number, email): focus is all select() shows.
+				}
+			},
+		});
+	}
 	Object.defineProperty(Document.prototype, "activeElement", {
 		configurable: true,
 		get(this: Document) {

@@ -69,6 +69,7 @@ export function scrollIntoDoc(
 }
 
 export function installScroll(): void {
+	holdPageOnEdit();
 	Object.defineProperty(Element.prototype, "scrollIntoView", {
 		configurable: true,
 		writable: true,
@@ -85,4 +86,78 @@ export function installScroll(): void {
 			scrollIntoDoc(this, { block: at, inline: at }, true);
 		},
 	});
+}
+
+/**
+ * Editing in the replay never scrolls the page around it. Firefox scrolls the
+ * caret into view after every edit, even in an unfocused frame, and carries
+ * it up to the page whatever the frame's origin or the page's css. So each
+ * edit (execCommand, from the shim or the app) notes where the page stands
+ * and holds it for the next two frames: a scroll landing then goes back in
+ * the page's scroll event, which runs before paint, so nothing moves on
+ * screen. Unless the viewer is scrolling right then: wheel, touch, keys or a
+ * pointer held down (a scrollbar drag) let it through. A page the replay
+ * can't reach (cross origin) is left alone.
+ */
+function holdPageOnEdit(): void {
+	let page: Window;
+	try {
+		if (window.parent === window) return;
+		void window.parent.scrollY;
+		page = window.parent;
+	} catch {
+		return;
+	}
+	let held: { x: number; y: number } | null = null;
+	let viewer = false;
+	let down = false;
+	const mark = () => {
+		viewer = true;
+	};
+	for (const type of ["wheel", "touchmove", "keydown"]) {
+		page.addEventListener(type, mark, { capture: true, passive: true });
+	}
+	page.addEventListener(
+		"pointerdown",
+		() => {
+			down = true;
+			viewer = true;
+		},
+		{ capture: true, passive: true },
+	);
+	page.addEventListener(
+		"pointerup",
+		() => {
+			down = false;
+		},
+		{ capture: true, passive: true },
+	);
+	page.addEventListener(
+		"scroll",
+		() => {
+			if (!held || viewer || down) return;
+			if (page.scrollX !== held.x || page.scrollY !== held.y) {
+				page.scrollTo({ left: held.x, top: held.y, behavior: "instant" });
+			}
+		},
+		{ capture: true, passive: true },
+	);
+	const hold = () => {
+		if (held) return;
+		held = { x: page.scrollX, y: page.scrollY };
+		viewer = false;
+		page.requestAnimationFrame(() =>
+			page.requestAnimationFrame(() => {
+				held = null;
+			}),
+		);
+	};
+	const exec = Document.prototype.execCommand;
+	Document.prototype.execCommand = function (
+		this: Document,
+		...args: Parameters<Document["execCommand"]>
+	) {
+		hold();
+		return exec.apply(this, args);
+	};
 }
