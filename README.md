@@ -14,6 +14,13 @@ Works for any UI driven by a websocket. Frames are opaque bytes, tape never read
 | `@nustackdev/tape-player` | `<LiveScene>` (react) and the shim that runs inside the iframe |
 | `@nustackdev/tape-scene` | the scene format and its helpers |
 
+## Install
+
+```bash
+npm i -D @nustackdev/tape          # the CLI
+npm i @nustackdev/tape-player      # <LiveScene>
+```
+
 ## Record
 
 ```bash

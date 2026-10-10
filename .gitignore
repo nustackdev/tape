@@ -4,3 +4,6 @@ dist/
 .DS_Store
 _playground/
 /scenes/
+
+# copied in from the root on pack
+packages/*/LICENSE.md

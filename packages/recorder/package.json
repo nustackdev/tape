@@ -2,6 +2,13 @@
 	"name": "@nustackdev/tape",
 	"description": "The tape CLI: record a websocket UI session through a proxy, prepare an app bundle for replay.",
 	"version": "0.1.0",
+	"license": "Apache-2.0",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/nustackdev/tape.git",
+		"directory": "packages/recorder"
+	},
+	"homepage": "https://github.com/nustackdev/tape#readme",
 	"type": "module",
 	"bin": {
 		"tape": "./dist/cli.js"
@@ -12,7 +19,8 @@
 	"scripts": {
 		"build": "tsup src/cli.ts --format esm --clean --target node20",
 		"typecheck": "tsc --noEmit",
-		"test": "vitest run"
+		"test": "vitest run",
+		"prepack": "cp ../../LICENSE.md ."
 	},
 	"dependencies": {
 		"@nustackdev/tape-player": "workspace:*",
@@ -22,5 +30,8 @@
 	"devDependencies": {
 		"@types/node": "^24.10.1",
 		"@types/ws": "^8.18.1"
+	},
+	"publishConfig": {
+		"access": "public"
 	}
 }

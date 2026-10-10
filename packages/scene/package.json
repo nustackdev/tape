@@ -2,6 +2,13 @@
 	"name": "@nustackdev/tape-scene",
 	"description": "The tape scene format: what a recorded websocket UI session looks like on disk.",
 	"version": "0.1.0",
+	"license": "Apache-2.0",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/nustackdev/tape.git",
+		"directory": "packages/scene"
+	},
+	"homepage": "https://github.com/nustackdev/tape#readme",
 	"type": "module",
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
@@ -17,6 +24,10 @@
 	"scripts": {
 		"build": "tsup src/index.ts --format esm --dts --clean",
 		"typecheck": "tsc --noEmit",
-		"test": "vitest run"
+		"test": "vitest run",
+		"prepack": "cp ../../LICENSE.md ."
+	},
+	"publishConfig": {
+		"access": "public"
 	}
 }

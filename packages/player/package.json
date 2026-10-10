@@ -2,6 +2,13 @@
 	"name": "@nustackdev/tape-player",
 	"description": "Replay a tape scene: the real app in an iframe, its websocket fed from the recording, a cursor on top.",
 	"version": "0.1.0",
+	"license": "Apache-2.0",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/nustackdev/tape.git",
+		"directory": "packages/player"
+	},
+	"homepage": "https://github.com/nustackdev/tape#readme",
 	"type": "module",
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
@@ -18,7 +25,8 @@
 	"scripts": {
 		"build": "tsup",
 		"typecheck": "tsc --noEmit",
-		"test": "vitest run"
+		"test": "vitest run",
+		"prepack": "cp ../../LICENSE.md ."
 	},
 	"dependencies": {
 		"@nustackdev/tape-scene": "workspace:*"
@@ -29,5 +37,8 @@
 	"devDependencies": {
 		"@types/react": "^19.2.7",
 		"react": "^19.2.0"
+	},
+	"publishConfig": {
+		"access": "public"
 	}
 }
