@@ -2,7 +2,8 @@
 //
 // A fixed size frame that is empty until the replay is on screen, so the page
 // around it never shifts. It loads after first paint, and only once near the
-// viewport when `lazy`. It plays while in view, pauses off screen and loops.
+// viewport when `lazy`. It plays while in view, pauses off screen and loops,
+// the next run loading behind the last frame so the loop never goes blank.
 // With reduced motion it shows the last frame, still.
 //
 // The app runs in an iframe at the recorded viewport size and is scaled to
@@ -11,7 +12,14 @@
 // cursor is drawn over it.
 
 import { parseScene, playWindow, type Scene } from "@nustackdev/tape-scene";
-import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from "react";
+import {
+	type CSSProperties,
+	type ReactNode,
+	type RefObject,
+	useEffect,
+	useRef,
+	useState,
+} from "react";
 import { Cursor, type CursorHandle } from "./cursor";
 import { type Body, isTape, TAG, type ToParent, type ToShim } from "./protocol";
 
@@ -74,6 +82,137 @@ function prefersReducedMotion(): boolean {
 	return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 }
 
+interface TakeProps {
+	app: string;
+	scene: Scene;
+	storage: Record<string, string> | undefined;
+	input: boolean;
+	speed: number;
+	hold: number;
+	label: string | undefined;
+	/** The clock runs and drives the cursor. */
+	live: boolean;
+	/** Shown. A take loading behind the live one is not. */
+	on: boolean;
+	visible: RefObject<boolean>;
+	pointer: RefObject<CursorHandle | null>;
+	/** The first frame is painted. */
+	onReady: () => void;
+	/** Played to the end: time to load the next run. */
+	onEnd: () => void;
+	/** And held there `hold` ms: time to show it. */
+	onHeld: () => void;
+}
+
+/** One run of the scene in its own iframe: handshake with the shim, then tick to the end. */
+function Take(props: TakeProps) {
+	const { app, scene, label, live, on } = props;
+	const frame = useRef<HTMLIFrameElement>(null);
+	const ref = useRef(props);
+	ref.current = props;
+	/** Where this run is, for the cursor when it goes live. */
+	const at = useRef<number | null>(null);
+
+	useEffect(() => {
+		const win = frame.current?.contentWindow;
+		if (!win) return;
+		const [start, end] = playWindow(scene);
+		const still = prefersReducedMotion();
+		const send = (m: Body<ToShim>) => win.postMessage({ tape: TAG, ...m }, "*");
+
+		let t = start;
+		let clock = false;
+		let last = 0;
+		let raf = 0;
+		let finished = -1;
+
+		const step = (ts: number) => {
+			raf = requestAnimationFrame(step);
+			if (!clock) return;
+			const p = ref.current;
+			const playing = p.live && p.visible.current && !document.hidden;
+			const dt = last ? Math.min(ts - last, 100) : 0;
+			last = ts;
+			if (!playing) return;
+			if (t < end) {
+				t = Math.min(end, t + dt * p.speed);
+				at.current = t;
+				send({ type: "tick", t });
+				p.pointer.current?.seek(t);
+				return;
+			}
+			if (finished < 0) {
+				finished = 0;
+				p.onEnd();
+			}
+			const before = finished;
+			finished += dt;
+			if (before < p.hold && finished >= p.hold) p.onHeld();
+		};
+
+		const onMessage = (ev: MessageEvent) => {
+			if (ev.source !== win || !isTape<ToParent>(ev.data)) return;
+			const m = ev.data;
+			const p = ref.current;
+			if (m.type === "hello")
+				send({ type: "scene", scene: withStorage(scene, p.storage), input: p.input });
+			else if (m.type === "open" && !clock) {
+				t = Math.max(start, scene.sockets[0]?.open ?? 0);
+				if (still) {
+					t = end;
+					send({ type: "tick", t });
+					return;
+				}
+				clock = true;
+				at.current = t;
+				send({ type: "tick", t });
+				if (p.live) p.pointer.current?.reset(scene, t);
+			} else if (m.type === "painted") p.onReady();
+		};
+		window.addEventListener("message", onMessage);
+		raf = requestAnimationFrame(step);
+		return () => {
+			window.removeEventListener("message", onMessage);
+			cancelAnimationFrame(raf);
+		};
+	}, [scene]);
+
+	// A take loaded behind the live one takes the cursor over where it stands.
+	useEffect(() => {
+		if (live && at.current !== null) ref.current.pointer.current?.reset(scene, at.current);
+	}, [live, scene]);
+
+	const vp = scene.meta.viewport;
+	return (
+		<iframe
+			ref={frame}
+			src={app}
+			title={label ?? "live scene"}
+			aria-hidden
+			tabIndex={-1}
+			style={{
+				position: "absolute",
+				left: 0,
+				top: 0,
+				width: vp.width,
+				height: vp.height,
+				border: 0,
+				display: "block",
+				pointerEvents: "none",
+				colorScheme: "normal",
+				opacity: on ? 1 : 0,
+				transition: `opacity ${FADE_MS}ms ease`,
+			}}
+		/>
+	);
+}
+
+interface Slot {
+	id: number;
+	storage: Record<string, string> | undefined;
+	ready: boolean;
+}
+
 export function LiveScene({
 	app,
 	scene: sceneSrc,
@@ -92,12 +231,9 @@ export function LiveScene({
 	onReady,
 }: LiveSceneProps) {
 	const box = useRef<HTMLDivElement>(null);
-	const frame = useRef<HTMLIFrameElement>(null);
 	const pointer = useRef<CursorHandle>(null);
 	const [active, setActive] = useState(false);
 	const [scene, setScene] = useState<Scene | null>(null);
-	const [run, setRun] = useState(0);
-	const [shown, setShown] = useState(false);
 	const [fit, setFit] = useState({ scale: 0, x: 0, y: 0 });
 	const visible = useRef(false);
 	const onReadyRef = useRef(onReady);
@@ -107,14 +243,55 @@ export function LiveScene({
 	const storageKey = JSON.stringify(storage ?? {});
 	const firstStorage = useRef(storageKey);
 
-	// New storage means a fresh start: fade out, then a new run in a new frame.
+	// The live run, and the next one loading behind it once the live one ends.
+	// The next is shown over the last frame of the live one when it has painted,
+	// so a loop never goes blank.
+	const ids = useRef(1);
+	const [slots, setSlots] = useState<Slot[]>(() => [{ id: 0, storage, ready: false }]);
+	const [front, setFront] = useState(0);
+	const [held, setHeld] = useState(false);
+
+	const queue = (hand: boolean) => {
+		const id = ids.current++;
+		setSlots((s) => [
+			...s.filter((x) => x.id === front),
+			{ id, storage: storageRef.current, ready: false },
+		]);
+		if (hand) setHeld(true);
+	};
+
+	// New storage: a fresh run, shown as soon as it has painted.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: only a change of storage matters
 	useEffect(() => {
 		if (storageKey === firstStorage.current) return;
 		firstStorage.current = storageKey;
-		setShown(false);
-		const id = window.setTimeout(() => setRun((r) => r + 1), FADE_MS);
-		return () => clearTimeout(id);
+		queue(true);
 	}, [storageKey]);
+
+	const last = slots[slots.length - 1];
+	const next = last && last.id !== front ? last : undefined;
+	useEffect(() => {
+		if (!next?.ready || !held) return;
+		setFront(next.id);
+		setHeld(false);
+	}, [next?.ready, next?.id, held]);
+
+	// The old run goes once the new one has faded in over it.
+	useEffect(() => {
+		const id = window.setTimeout(
+			() =>
+				setSlots((s) =>
+					s.slice(
+						Math.max(
+							0,
+							s.findIndex((x) => x.id === front),
+						),
+					),
+				),
+			FADE_MS,
+		);
+		return () => clearTimeout(id);
+	}, [front]);
 
 	// Start after first paint; with `lazy`, once near the viewport. Track visibility for play/pause.
 	useEffect(() => {
@@ -169,71 +346,6 @@ export function LiveScene({
 		return () => ro.disconnect();
 	}, [scene]);
 
-	// One run: handshake with the shim, then tick until the end, then loop.
-	// biome-ignore lint/correctness/useExhaustiveDependencies: `run` restarts the loop on purpose
-	useEffect(() => {
-		const win = frame.current?.contentWindow;
-		if (!scene || !win) return;
-		const [start, end] = playWindow(scene);
-		const still = prefersReducedMotion();
-		const send = (m: Body<ToShim>) => win.postMessage({ tape: TAG, ...m }, "*");
-
-		let t = start;
-		let clock = false;
-		let last = 0;
-		let raf = 0;
-		let finishedAt = 0;
-		let restart = 0;
-
-		const step = (ts: number) => {
-			raf = requestAnimationFrame(step);
-			if (!clock) return;
-			const playing = visible.current && !document.hidden;
-			const dt = last ? Math.min(ts - last, 100) : 0;
-			last = ts;
-			if (!playing) return;
-			if (t < end) {
-				t = Math.min(end, t + dt * speed);
-				send({ type: "tick", t });
-				pointer.current?.seek(t);
-				return;
-			}
-			finishedAt += dt;
-			if (loop && finishedAt >= hold && !restart) {
-				setShown(false);
-				restart = window.setTimeout(() => setRun((r) => r + 1), FADE_MS);
-			}
-		};
-
-		const onMessage = (ev: MessageEvent) => {
-			if (ev.source !== win || !isTape<ToParent>(ev.data)) return;
-			const m = ev.data;
-			if (m.type === "hello")
-				send({ type: "scene", scene: withStorage(scene, storageRef.current), input });
-			else if (m.type === "open" && !clock) {
-				t = Math.max(start, scene.sockets[0]?.open ?? 0);
-				if (still) {
-					t = end;
-					send({ type: "tick", t });
-					return;
-				}
-				clock = true;
-				send({ type: "tick", t });
-				pointer.current?.reset(scene, t);
-			} else if (m.type === "painted") {
-				setShown(true);
-				onReadyRef.current?.();
-			}
-		};
-		window.addEventListener("message", onMessage);
-		raf = requestAnimationFrame(step);
-		return () => {
-			window.removeEventListener("message", onMessage);
-			cancelAnimationFrame(raf);
-			clearTimeout(restart);
-		};
-	}, [scene, run, loop, hold, speed, input]);
-
 	const vp = scene?.meta.viewport;
 	return (
 		<div
@@ -254,26 +366,36 @@ export function LiveScene({
 						height: vp.height,
 						transform: `translate(${fit.x}px, ${fit.y}px) scale(${fit.scale})`,
 						transformOrigin: "0 0",
-						opacity: shown && fit.scale > 0 ? 1 : 0,
-						transition: `opacity ${FADE_MS}ms ease`,
+						opacity: fit.scale > 0 ? 1 : 0,
 					}}
 				>
-					<iframe
-						key={run}
-						ref={frame}
-						src={app}
-						title={label ?? "live scene"}
-						aria-hidden
-						tabIndex={-1}
-						style={{
-							width: vp.width,
-							height: vp.height,
-							border: 0,
-							display: "block",
-							pointerEvents: "none",
-							colorScheme: "normal",
-						}}
-					/>
+					{slots.map((slot, i) => (
+						<Take
+							key={slot.id}
+							app={app}
+							scene={scene}
+							storage={slot.storage}
+							input={input}
+							speed={speed}
+							hold={hold}
+							label={label}
+							live={slot.id === front}
+							// The one underneath stays up while the next fades in over it.
+							on={slot.ready && (slot.id === front || i === 0)}
+							visible={visible}
+							pointer={pointer}
+							onReady={() => {
+								setSlots((s) => s.map((x) => (x.id === slot.id ? { ...x, ready: true } : x)));
+								if (slot.id === 0) onReadyRef.current?.();
+							}}
+							onEnd={() => {
+								if (loop && slot.id === front && !next) queue(false);
+							}}
+							onHeld={() => {
+								if (slot.id === front) setHeld(true);
+							}}
+						/>
+					))}
 					{cursor && !prefersReducedMotion() && <Cursor ref={pointer} />}
 				</div>
 			)}
