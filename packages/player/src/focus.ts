@@ -38,6 +38,22 @@ function chain(el: Element | null): Element[] {
 	return out;
 }
 
+/**
+ * Where a browser puts the caret focusing `host`: inside its first block, at
+ * the start of its first text. Not before the first block: text typed there
+ * lands outside any paragraph, and Firefox makes it a paragraph of its own.
+ */
+function firstCaret(host: HTMLElement): [Node, number] {
+	let n: Node = host;
+	for (let c = n.firstChild; c; c = n.firstChild) {
+		if (c instanceof HTMLBRElement) break;
+		if (c instanceof HTMLElement && !c.isContentEditable) break;
+		if (!(c instanceof HTMLElement) && !(c instanceof Text)) break;
+		n = c;
+	}
+	return [n, 0];
+}
+
 export function setFocus(el: Element | null, byScript = false): void {
 	if (el && !el.isConnected) el = null;
 	if (el === activeElement()) return;
@@ -55,7 +71,7 @@ export function setFocus(el: Element | null, byScript = false): void {
 		// Focusing an editable moves the selection into it, as a browser does, unless it is in there already.
 		if (el instanceof HTMLElement && el.isContentEditable) {
 			const sel = el.ownerDocument.getSelection();
-			if (sel && !(sel.anchorNode && el.contains(sel.anchorNode))) sel.collapse(el, 0);
+			if (sel && !(sel.anchorNode && el.contains(sel.anchorNode))) sel.collapse(...firstCaret(el));
 		}
 		el.setAttribute(FOCUS_ATTR, "");
 		if (showsFocus(el) || (byScript && wasVisible)) el.setAttribute(FOCUS_VISIBLE_ATTR, "");
