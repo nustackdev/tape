@@ -74,6 +74,38 @@ export interface SceneNav {
 	mode: "push" | "replace" | "pop";
 }
 
+/** Modifier bits on input events. */
+export const MOD_SHIFT = 1;
+export const MOD_CTRL = 2;
+export const MOD_ALT = 4;
+export const MOD_META = 8;
+
+/**
+ * Where an element sits: child indices from <html> down, eg "1/0/3". Empty
+ * for the document itself. The replay builds the same DOM, so it resolves.
+ */
+export type ElementPath = string;
+
+/**
+ * Input, recorded so local UI replays too: menus, focus, typing, hover. The
+ * player feeds these into the app as DOM events.
+ */
+export type SceneEvent =
+	/** Pointer buttons and clicks at viewport coordinates. `b` is the button, `m` modifier bits. */
+	| {
+			t: Ms;
+			k: "down" | "up" | "click" | "dblclick" | "contextmenu";
+			x: number;
+			y: number;
+			b: number;
+			m: number;
+	  }
+	| { t: Ms; k: "keydown" | "keyup"; key: string; code: string; m: number; r?: 1 }
+	/** An element (or the document) scrolled to x, y. */
+	| { t: Ms; k: "scroll"; p: ElementPath; x: number; y: number }
+	/** An input or textarea now holds `v`. Keeps typed text right whatever the keys did. */
+	| { t: Ms; k: "value"; p: ElementPath; v: string };
+
 export interface Scene {
 	tape: typeof SCENE_VERSION;
 	meta: SceneMeta;
@@ -83,6 +115,8 @@ export interface Scene {
 	frames: SceneFrame[];
 	pointer: PointerSample[];
 	nav: SceneNav[];
+	/** Missing in scenes recorded before input replay. */
+	events?: SceneEvent[];
 }
 
 /** Parse and check a scene. Throws on anything it can't play. */

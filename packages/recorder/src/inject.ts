@@ -1,6 +1,7 @@
 // The script the recorder puts at the top of every page it serves. It reports
-// what the server can't see: the viewport, localStorage at load, the pointer
-// and client side navigation. It opens its own socket to the recorder and
+// what the server can't see: the viewport, localStorage at load, the pointer,
+// client side navigation, and input (buttons, keys, scrolls, field values) so
+// local UI replays too. It opens its own socket to the recorder and
 // never touches the app's.
 //
 // Kept as plain browser JS in a string so it ships exactly as written.
@@ -43,6 +44,48 @@ export const INJECT_SCRIPT = `(() => {
 	}, { capture: true, passive: true });
 	addEventListener("pointerdown", (e) => send({ type: "p", k: 1, x: e.clientX, y: e.clientY }), true);
 	addEventListener("pointerup", (e) => send({ type: "p", k: 2, x: e.clientX, y: e.clientY }), true);
+
+	const mods = (e) => (e.shiftKey ? 1 : 0) | (e.ctrlKey ? 2 : 0) | (e.altKey ? 4 : 0) | (e.metaKey ? 8 : 0);
+	const pathOf = (el) => {
+		const parts = [];
+		while (el && el !== document.documentElement && el.parentElement) {
+			parts.unshift([...el.parentElement.children].indexOf(el));
+			el = el.parentElement;
+		}
+		return parts.join("/");
+	};
+	const ev = (m) => send({ type: "e", e: m });
+	const button = (k) => (e) => {
+		if (e.isTrusted) ev({ k, x: e.clientX, y: e.clientY, b: e.button, m: mods(e) });
+	};
+	// Pointer, not mouse: a handler cancelling pointerdown makes the browser skip the mouse events.
+	addEventListener("pointerdown", button("down"), true);
+	addEventListener("pointerup", button("up"), true);
+	addEventListener("click", button("click"), true);
+	addEventListener("dblclick", button("dblclick"), true);
+	addEventListener("contextmenu", button("contextmenu"), true);
+	const key = (k) => (e) => {
+		if (!e.isTrusted || e.isComposing) return;
+		ev({ k, key: e.key, code: e.code, m: mods(e), ...(e.repeat ? { r: 1 } : {}) });
+	};
+	addEventListener("keydown", key("keydown"), true);
+	addEventListener("keyup", key("keyup"), true);
+	const scrolled = new Map();
+	addEventListener("scroll", (e) => {
+		const el = e.target === document ? document.scrollingElement : e.target;
+		if (!el || scrolled.has(el)) return;
+		scrolled.set(el, true);
+		requestAnimationFrame(() => {
+			scrolled.delete(el);
+			ev({ k: "scroll", p: el === document.scrollingElement ? "" : pathOf(el), x: el.scrollLeft, y: el.scrollTop });
+		});
+	}, { capture: true, passive: true });
+	addEventListener("input", (e) => {
+		const el = e.target;
+		if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+			ev({ k: "value", p: pathOf(el), v: el.value });
+		}
+	}, true);
 	document.documentElement.addEventListener("mouseleave", () => send({ type: "p", k: 3, x, y }));
 
 	for (const [name, mode] of [["pushState", "push"], ["replaceState", "replace"]]) {

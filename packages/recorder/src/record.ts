@@ -14,6 +14,7 @@ import {
 	type PointerSample,
 	SCENE_VERSION,
 	type Scene,
+	type SceneEvent,
 	type SceneFrame,
 	type SceneNav,
 	type SceneSocket,
@@ -49,6 +50,7 @@ class Take {
 	frames: SceneFrame[] = [];
 	pointer: PointerSample[] = [];
 	nav: SceneNav[] = [];
+	events: SceneEvent[] = [];
 	last = 0;
 
 	now(): number {
@@ -80,6 +82,7 @@ class Take {
 			frames: this.frames,
 			pointer: this.pointer,
 			nav: this.nav,
+			events: this.events,
 		};
 	}
 }
@@ -103,7 +106,7 @@ export async function record(opts: RecordOptions): Promise<Recorder> {
 		if (!take) return;
 		const s = (take.last / 1000).toFixed(1);
 		log(
-			`take ${takes}  ${s}s  frames ${take.frames.length}  pointer ${take.pointer.length}  nav ${take.nav.length}`,
+			`take ${takes}  ${s}s  frames ${take.frames.length}  pointer ${take.pointer.length}  nav ${take.nav.length}  input ${take.events.length}`,
 		);
 	};
 	const ticker = setInterval(status, 1000);
@@ -203,6 +206,9 @@ export async function record(opts: RecordOptions): Promise<Recorder> {
 						path: String(m.path),
 						mode: m.mode as SceneNav["mode"],
 					});
+					break;
+				case "e":
+					mine.events.push({ ...(m.e as SceneEvent), t: mine.mark(t) });
 					break;
 				case "resize":
 					if (!mine.resized) log("viewport changed mid take, the scene keeps the size at load");

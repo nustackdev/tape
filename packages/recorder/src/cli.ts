@@ -141,6 +141,7 @@ async function main(argv: string[]) {
 			`frames    ${scene.frames.length}, ${kb(bytes)} payload`,
 			`pointer   ${scene.pointer.length} samples, ${scene.pointer.filter((p) => p[3] === 1).length} clicks`,
 			`nav       ${scene.nav.map((n) => n.path).join(" > ") || "none"}`,
+			`input     ${scene.events?.length ?? 0} events, ${scene.events?.filter((e) => e.k === "keydown").length ?? 0} keys`,
 		];
 		process.stdout.write(`${lines.join("\n")}\n`);
 		return;
