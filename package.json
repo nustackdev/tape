@@ -1,0 +1,20 @@
+{
+	"name": "tape-workspace",
+	"private": true,
+	"description": "Record a websocket UI session, replay it anywhere.",
+	"type": "module",
+	"packageManager": "pnpm@11.18.0",
+	"scripts": {
+		"build": "pnpm -r build",
+		"typecheck": "pnpm -r typecheck",
+		"test": "pnpm -r test",
+		"check": "biome check .",
+		"check:fix": "biome check --write ."
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.3.15",
+		"tsup": "^8.5.0",
+		"typescript": "~5.9.3",
+		"vitest": "^3.2.4"
+	}
+}
