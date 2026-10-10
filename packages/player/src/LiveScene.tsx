@@ -31,6 +31,12 @@ export interface LiveSceneProps {
 	cursor?: boolean;
 	/** Replay recorded input into the app too, so local UI plays: menus, typing, hover. Default true. */
 	input?: boolean;
+	/**
+	 * localStorage keys laid over the take's at load: the app's theme, say, to
+	 * match the page around it. Apps read their storage once, as they start,
+	 * so a change restarts the replay.
+	 */
+	storage?: Record<string, string>;
 	/** Accessible description of what the scene shows. */
 	label?: string;
 	/** Behind the frame until it is ready. Empty by default. */
@@ -59,6 +65,11 @@ function loadScene(src: string | Scene): Promise<Scene> {
 	return p;
 }
 
+function withStorage(scene: Scene, over: Record<string, string> | undefined): Scene {
+	if (!over) return scene;
+	return { ...scene, storage: { ...scene.storage, local: { ...scene.storage.local, ...over } } };
+}
+
 function prefersReducedMotion(): boolean {
 	return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 }
@@ -73,6 +84,7 @@ export function LiveScene({
 	speed = 1,
 	cursor = true,
 	input = true,
+	storage,
 	label,
 	placeholder,
 	className,
@@ -90,6 +102,19 @@ export function LiveScene({
 	const visible = useRef(false);
 	const onReadyRef = useRef(onReady);
 	onReadyRef.current = onReady;
+	const storageRef = useRef(storage);
+	storageRef.current = storage;
+	const storageKey = JSON.stringify(storage ?? {});
+	const firstStorage = useRef(storageKey);
+
+	// New storage means a fresh start: fade out, then a new run in a new frame.
+	useEffect(() => {
+		if (storageKey === firstStorage.current) return;
+		firstStorage.current = storageKey;
+		setShown(false);
+		const id = window.setTimeout(() => setRun((r) => r + 1), FADE_MS);
+		return () => clearTimeout(id);
+	}, [storageKey]);
 
 	// Start after first paint; with `lazy`, once near the viewport. Track visibility for play/pause.
 	useEffect(() => {
@@ -183,7 +208,8 @@ export function LiveScene({
 		const onMessage = (ev: MessageEvent) => {
 			if (ev.source !== win || !isTape<ToParent>(ev.data)) return;
 			const m = ev.data;
-			if (m.type === "hello") send({ type: "scene", scene, input });
+			if (m.type === "hello")
+				send({ type: "scene", scene: withStorage(scene, storageRef.current), input });
 			else if (m.type === "open" && !clock) {
 				t = Math.max(start, scene.sockets[0]?.open ?? 0);
 				if (still) {
