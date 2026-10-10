@@ -7,7 +7,7 @@
 // keydown, caret placement, scroll positions. Pointer capture is patched,
 // since a synthetic pointer can't be captured.
 
-import type { ElementPath, PointerSample, SceneEvent } from "@nustackdev/tape-scene";
+import type { ElementPath, SceneEvent } from "@nustackdev/tape-scene";
 import { activeElement, focusTarget, setFocus, setModality } from "./focus";
 import { setHover } from "./pseudo";
 
@@ -102,11 +102,12 @@ export class InputPlayer {
 		};
 	}
 
-	/**
-	 * The pointer is at x, y now. Called every tick, moved or not: like a
-	 * browser, hover follows the page changing under a pointer that stands
-	 * still. Only an actual move fires pointermove.
-	 */
+	/** Hit test again where the pointer stands: like a browser, hover follows the page changing under it. */
+	hover() {
+		if (this.x >= 0) this.move(this.x, this.y);
+	}
+
+	/** The pointer is at x, y now. Only an actual move fires pointermove. */
 	move(x: number, y: number) {
 		const moved = x !== this.x || y !== this.y;
 		this.x = x;
@@ -270,11 +271,5 @@ export class InputPlayer {
 			else if (key === "Backspace") doc.execCommand("delete");
 			else if (key === "Delete") doc.execCommand("forwardDelete");
 		}
-	}
-
-	/** Latest pointer sample at or before t, from index i on. */
-	static seek(track: PointerSample[], i: number, t: number): number {
-		while (i + 1 < track.length && (track[i + 1] as PointerSample)[0] <= t) i++;
-		return i;
 	}
 }

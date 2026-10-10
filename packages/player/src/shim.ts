@@ -108,35 +108,39 @@ declare global {
 				opened = true;
 				post({ type: "open" });
 			}
-			this.advance();
+			void pump();
 		}
 
-		/** Play this socket up to `now`. */
-		advance() {
-			if (!scene || this.rec < 0 || this.readyState >= 2) return;
+		/** When this socket's next step is due: its open, its next frame or its close. */
+		due(): number | null {
+			if (!scene || this.rec < 0 || this.readyState >= 2) return null;
 			const rec = scene.sockets[this.rec];
-			if (!rec) return;
+			if (!rec) return null;
+			if (this.readyState === 0) return rec.open;
+			const item = byS[this.rec]?.[this.next];
+			if (item) return item.frame.t;
+			return rec.close ?? null;
+		}
+
+		/** Take the step `due` named. */
+		step() {
+			const rec = scene?.sockets[this.rec];
+			if (!rec || this.readyState >= 2) return;
 			if (this.readyState === 0) {
-				if (rec.open > now) return;
 				this.readyState = 1;
 				this.fire(new Event("open"));
+				return;
 			}
-			const frames = byS[this.rec] ?? [];
-			let delivered = false;
-			while (this.next < frames.length) {
-				const item = frames[this.next];
-				if (!item || item.frame.t > now) break;
-				this.next++;
-				this.fire(new MessageEvent("message", { data: this.payload(item.data) }));
-				delivered = true;
-				if (this.readyState !== 1) return;
+			const item = byS[this.rec]?.[this.next];
+			if (!item) {
+				this.end(rec.code ?? 1006, false);
+				return;
 			}
-			if (delivered && !painted) {
+			this.next++;
+			this.fire(new MessageEvent("message", { data: this.payload(item.data) }));
+			if (!painted) {
 				painted = true;
 				requestAnimationFrame(() => requestAnimationFrame(() => post({ type: "painted" })));
-			}
-			if (rec.close !== undefined && rec.close <= now && this.next >= frames.length) {
-				this.end(rec.code ?? 1006, false);
 			}
 		}
 
@@ -257,25 +261,64 @@ declare global {
 		for (const ws of live) ws.claim();
 	};
 
+	// A task of its own, as a browser gives each socket message and input event.
+	// Not setTimeout: nested, that waits at least 4ms a turn.
+	const channel = new MessageChannel();
+	const waiting: (() => void)[] = [];
+	channel.port1.onmessage = () => waiting.shift()?.();
+	const nextTask = () =>
+		new Promise<void>((r) => {
+			waiting.push(r);
+			channel.port2.postMessage(null);
+		});
+
 	/**
-	 * Play due events one task each. The recorder held the clock until the task
-	 * after an event, so whatever the event set off (microtasks, a framework's
-	 * batched render) saw the pinned time; the replay does the same.
+	 * Play everything due, one task each, in the order of the take: server
+	 * frames, input events and pointer moves on one timeline. The app's
+	 * decisions hang on that order (did the key land before the frame that
+	 * mounted the editor?), so a slow tick must not batch one kind ahead of
+	 * the other.
+	 *
+	 * The recorder held the clock until the task after an event, so whatever
+	 * the event set off (microtasks, a framework's batched render) saw the
+	 * pinned time; the replay does the same.
 	 */
 	const pump = async () => {
-		if (pumping || !scene || !input) return;
+		if (pumping || !scene) return;
 		pumping = true;
 		try {
 			const events = scene.events ?? [];
-			while (ev < events.length) {
-				const e = events[ev];
-				if (!e || e.t > now) break;
-				ev++;
-				if (rnd && e.r !== undefined) rnd.seek(e.r);
-				pinned = e.w ?? null;
-				input.play(e);
-				await new Promise((r) => setTimeout(r, 0));
-				pinned = null;
+			const track = scene.pointer;
+			for (;;) {
+				let sock: FakeSocket | null = null;
+				let at = Number.POSITIVE_INFINITY;
+				for (const ws of live) {
+					const d = ws.due();
+					if (d !== null && d <= now && d < at) {
+						at = d;
+						sock = ws;
+					}
+				}
+				// Input waits for the app's first socket: before that there is nothing on screen to act on.
+				const e = input && opened ? events[ev] : undefined;
+				const p = input && opened ? track[ptr + 1] : undefined;
+				if (p && p[0] <= now && p[0] < at && !(e && e.t <= p[0])) {
+					ptr++;
+					if (p[3] !== 3) input?.move(p[1], p[2]);
+					continue;
+				}
+				if (e && e.t <= now && e.t < at) {
+					ev++;
+					if (rnd && e.r !== undefined) rnd.seek(e.r);
+					pinned = e.w ?? null;
+					input?.play(e);
+					await nextTask();
+					pinned = null;
+					continue;
+				}
+				if (!sock) break;
+				sock.step();
+				await nextTask();
 			}
 		} finally {
 			pumping = false;
@@ -286,14 +329,9 @@ declare global {
 	const tick = (t: number) => {
 		if (!scene) return;
 		now = t;
-		// Input waits for the app's first socket: before that there is nothing on screen to act on.
-		if (input && opened) {
-			void pump();
-			const track = scene.pointer;
-			ptr = InputPlayer.seek(track, ptr, now);
-			const p = track[ptr];
-			if (p && p[3] !== 3) input.move(p[1], p[2]);
-		}
+		void pump();
+		// Hover follows the page changing under a pointer that stands still.
+		if (!pumping) input?.hover();
 		while (nav < scene.nav.length) {
 			const n = scene.nav[nav];
 			// With input, the replayed click usually navigates by itself. Recorded nav is the fallback.
@@ -306,7 +344,6 @@ declare global {
 				window.dispatchEvent(new PopStateEvent("popstate", { state: null }));
 			} catch {}
 		}
-		for (const ws of live) ws.advance();
 	};
 
 	window.addEventListener("message", (ev) => {
