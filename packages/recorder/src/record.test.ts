@@ -71,6 +71,7 @@ describe("record", () => {
 		ws.on("message", (d, binary) => got.push(binary ? [...(d as Buffer)] : String(d)));
 		await settle();
 		ws.send(Buffer.from([7, 8, 9]));
+		await new Promise((r) => setTimeout(r, 400));
 		events.send(JSON.stringify({ type: "p", k: 0, x: 10, y: 20 }));
 		events.send(JSON.stringify({ type: "p", k: 1, x: 10, y: 20 }));
 		events.send(JSON.stringify({ type: "nav", mode: "push", path: "/a" }));
@@ -89,6 +90,11 @@ describe("record", () => {
 		expect(scene.storage.local).toEqual({ theme: "dark" });
 		expect(scene.sockets).toHaveLength(1);
 		expect(scene.sockets[0]?.url).toBe("/ws");
+		// Closed by the client, so not part of the take.
+		expect(scene.sockets[0]?.close).toBeUndefined();
+		// Starts just before the pointer does.
+		expect(scene.meta.start).toBeGreaterThan(0);
+		expect(scene.meta.start).toBeLessThan(scene.pointer[0]?.[0] ?? 0);
 		expect(scene.frames.map((f) => (f.x ? f.d : [...base64ToBytes(f.d)]))).toEqual([
 			[1, 2, 3],
 			"hello",

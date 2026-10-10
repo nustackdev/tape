@@ -33,6 +33,8 @@ export interface RecordOptions {
 
 /** Tail kept after the last thing that happened, so the end is not cut mid gesture. */
 const TAIL_MS = 400;
+/** Lead kept before the first pointer move. The app boots before that, and nobody wants to watch a boot. */
+const LEAD_MS = 300;
 
 class Take {
 	readonly t0 = performance.now();
@@ -67,6 +69,9 @@ class Take {
 				path: this.path,
 				viewport: this.viewport,
 				duration: Math.round(this.last + TAIL_MS),
+				...(this.pointer[0] && this.pointer[0][0] > LEAD_MS
+					? { start: Math.round(this.pointer[0][0] - LEAD_MS) }
+					: {}),
 				userAgent: this.userAgent,
 				...(title ? { title } : {}),
 			},
@@ -251,8 +256,10 @@ export async function record(opts: RecordOptions): Promise<Recorder> {
 			if (down.readyState === WebSocket.OPEN) down.send(data, { binary });
 		});
 
+		// The browser leaving is the end of the page, not something the app did. Not logged.
+		let left = false;
 		const ended = (code: number) => {
-			if (mine && index >= 0) {
+			if (mine && index >= 0 && !left) {
 				const s = mine.sockets[index];
 				if (s && s.close === undefined) {
 					s.close = mine.mark(mine.now());
@@ -266,7 +273,7 @@ export async function record(opts: RecordOptions): Promise<Recorder> {
 			if (down.readyState <= WebSocket.OPEN) down.close(sendable(code, 1012), reason);
 		});
 		down.on("close", (code, reason) => {
-			// The browser leaving is the end of the page, not something the app did. Not logged.
+			left = true;
 			if (up.readyState <= WebSocket.OPEN) up.close(sendable(code, 1000), reason);
 		});
 		up.on("error", (err) => {
@@ -274,7 +281,10 @@ export async function record(opts: RecordOptions): Promise<Recorder> {
 			ended(1006);
 			if (down.readyState <= WebSocket.OPEN) down.close(1011);
 		});
-		down.on("error", () => up.terminate());
+		down.on("error", () => {
+			left = true;
+			up.terminate();
+		});
 	}
 
 	await new Promise<void>((resolve, reject) => {
