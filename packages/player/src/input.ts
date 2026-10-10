@@ -102,9 +102,13 @@ export class InputPlayer {
 		};
 	}
 
-	/** The pointer is at x, y now: hover, enter/leave, move. */
+	/**
+	 * The pointer is at x, y now. Called every tick, moved or not: like a
+	 * browser, hover follows the page changing under a pointer that stands
+	 * still. Only an actual move fires pointermove.
+	 */
 	move(x: number, y: number) {
-		if (x === this.x && y === this.y) return;
+		const moved = x !== this.x || y !== this.y;
 		this.x = x;
 		this.y = y;
 		const el = this.doc.elementFromPoint(x, y);
@@ -114,18 +118,23 @@ export class InputPlayer {
 			if (from?.isConnected) {
 				from.dispatchEvent(new PointerEvent("pointerout", init));
 				from.dispatchEvent(new MouseEvent("mouseout", init));
-				for (const e of this.hovered) {
-					if (el && e.contains(el)) break;
-					e.dispatchEvent(new PointerEvent("pointerleave", { ...init, bubbles: false }));
-					e.dispatchEvent(new MouseEvent("mouseleave", { ...init, bubbles: false }));
-				}
+			}
+			for (const e of this.hovered) {
+				if (el && e.contains(el)) break;
+				if (!e.isConnected) continue;
+				e.dispatchEvent(new PointerEvent("pointerleave", { ...init, bubbles: false }));
+				e.dispatchEvent(new MouseEvent("mouseleave", { ...init, bubbles: false }));
 			}
 			if (el) {
 				const into = this.pointerInit(x, y, { relatedTarget: from });
 				el.dispatchEvent(new PointerEvent("pointerover", into));
 				el.dispatchEvent(new MouseEvent("mouseover", into));
 				const entered: Element[] = [];
-				for (let e: Element | null = el; e && !(from && e.contains(from)); e = e.parentElement)
+				for (
+					let e: Element | null = el;
+					e && !(from?.isConnected && e.contains(from));
+					e = e.parentElement
+				)
 					entered.unshift(e);
 				for (const e of entered) {
 					e.dispatchEvent(new PointerEvent("pointerenter", { ...into, bubbles: false }));
@@ -135,6 +144,7 @@ export class InputPlayer {
 			this.under = el;
 			this.hovered = setHover(this.hovered, el);
 		}
+		if (!moved) return;
 		const target = this.captured?.isConnected ? this.captured : el;
 		if (target) {
 			const init = this.pointerInit(x, y);

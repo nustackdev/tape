@@ -6,7 +6,8 @@
 //
 // :focus styles follow through `data-tape-focus` (see ./pseudo.ts), and
 // :focus-visible through `data-tape-focus-visible`, set the way browsers
-// decide it: always for text entry, otherwise only after the keyboard.
+// decide it: always for text entry, after the keyboard, and for a focus the
+// app moves by script when the focus it left was showing.
 
 export const FOCUS_ATTR = "data-tape-focus";
 export const FOCUS_VISIBLE_ATTR = "data-tape-focus-visible";
@@ -37,10 +38,11 @@ function chain(el: Element | null): Element[] {
 	return out;
 }
 
-export function setFocus(el: Element | null): void {
+export function setFocus(el: Element | null, byScript = false): void {
 	if (el && !el.isConnected) el = null;
 	if (el === activeElement()) return;
 	const old = activeElement();
+	const wasVisible = !!old?.hasAttribute(FOCUS_VISIBLE_ATTR);
 	current = el;
 	if (old) {
 		old.removeAttribute(FOCUS_ATTR);
@@ -51,7 +53,7 @@ export function setFocus(el: Element | null): void {
 	}
 	if (el) {
 		el.setAttribute(FOCUS_ATTR, "");
-		if (showsFocus(el)) el.setAttribute(FOCUS_VISIBLE_ATTR, "");
+		if (showsFocus(el) || (byScript && wasVisible)) el.setAttribute(FOCUS_VISIBLE_ATTR, "");
 		for (const e of chain(el)) e.setAttribute(FOCUS_WITHIN_ATTR, "");
 		el.dispatchEvent(new FocusEvent("focus", { relatedTarget: old }));
 		el.dispatchEvent(new FocusEvent("focusin", { bubbles: true, relatedTarget: old }));
@@ -81,7 +83,7 @@ export function focusTarget(el: Element | null): Element | null {
 
 export function installFocus(): void {
 	const focus = function (this: Element) {
-		setFocus(this);
+		setFocus(this, true);
 	};
 	const blur = function (this: Element) {
 		if (activeElement() === this) setFocus(null);
