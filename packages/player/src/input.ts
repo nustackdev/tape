@@ -8,6 +8,7 @@
 // since a synthetic pointer can't be captured.
 
 import type { ElementPath, SceneEvent } from "@nustackdev/tape-scene";
+import { type EditKind, editText, execNative } from "./edit";
 import { activeElement, focusTarget, setFocus, setModality } from "./focus";
 import { setHover } from "./pseudo";
 
@@ -301,10 +302,19 @@ export class InputPlayer {
 			return;
 		}
 		if (target instanceof HTMLElement && target.isContentEditable) {
-			if (text === "\n") doc.execCommand("insertParagraph");
-			else if (text !== null) doc.execCommand("insertText", false, text);
-			else if (key === "Backspace") doc.execCommand("delete");
-			else if (key === "Delete") doc.execCommand("forwardDelete");
+			const [kind, cmd]: [EditKind, string] | [null, null] =
+				text === "\n"
+					? ["insertParagraph", "insertParagraph"]
+					: text !== null
+						? ["insertText", "insertText"]
+						: key === "Backspace"
+							? ["deleteContentBackward", "delete"]
+							: key === "Delete"
+								? ["deleteContentForward", "forwardDelete"]
+								: [null, null];
+			if (!kind) return;
+			const data = kind === "insertText" ? text : null;
+			editText(doc, kind, data, () => execNative(doc, cmd, data ?? undefined));
 		}
 	}
 }

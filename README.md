@@ -68,8 +68,8 @@ Browsers don't let a script do everything a real user does, so the shim fills in
 
 - **focus** is pretended. real focus in the iframe would pull it off the page around it, so `focus()`, `select()` and `activeElement` are patched and focus events fire by hand
 - **hover and focus styles** come from copies of the app's `:hover` and `:focus` rules, keyed to attributes the shim sets
-- **typing** is done by hand after each unhandled keydown, and fields are reset to their recorded value as they go
-- **scroll** positions are recorded and set, pointer capture is patched for drags, and the app's `scrollIntoView` scrolls only inside the frame, never the page around it. Firefox also scrolls the page to the caret after each edit, so the page holds its position through every edit, unless the viewer is scrolling it
+- **typing** is done by hand, as a browser's default action: `beforeinput`, the change if nobody cancelled it, `input`. Not through the browser's editor: Firefox's scrolls the page around the frame to its caret. Fields are reset to their recorded value as they go
+- **scroll** positions are recorded and set, pointer capture is patched for drags, and the app's `scrollIntoView` scrolls only inside the frame, never the page around it
 - **select all** on Cmd/Ctrl+A is done by hand, like typing
 - **randomness and time** are shared with the take: `Math.random` and `crypto` draw from one seeded generator, and `Date` reads what it read in the take while each event is handled. so ids the app mints in the browser come out the same as the ones the server frames name
 - **hover** follows the page changing under a pointer that stands still, as in a browser

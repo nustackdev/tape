@@ -89,15 +89,15 @@ export function installScroll(): void {
 }
 
 /**
- * Editing in the replay never scrolls the page around it. Firefox scrolls the
- * caret into view after every edit, even in an unfocused frame, and carries
- * it up to the page whatever the frame's origin or the page's css. So each
- * edit (execCommand, from the shim or the app) notes where the page stands
- * and holds it for the next two frames: a scroll landing then goes back in
- * the page's scroll event, which runs before paint, so nothing moves on
- * screen. Unless the viewer is scrolling right then: wheel, touch, keys or a
- * pointer held down (a scrollbar drag) let it through. A page the replay
- * can't reach (cross origin) is left alone.
+ * A backstop for the edits still left to the browser's editor (./edit.ts does
+ * the common ones by hand). Firefox scrolls the caret into view after every
+ * edit, even in an unfocused frame, and carries it up to the page whatever
+ * the frame's origin or the page's css. So each execCommand notes where the
+ * page stands and puts it back in the page's scroll events for the next two
+ * frames. Late by a frame in a real window, so a jolt rather than a jump,
+ * which is why typing doesn't come this way. A viewer scrolling right then
+ * (wheel, touch, keys, a pointer held down) wins. A page the replay can't
+ * reach (cross origin) is left alone.
  */
 function holdPageOnEdit(): void {
 	let page: Window;

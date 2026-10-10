@@ -15,6 +15,7 @@ import {
 	type Scene,
 	type SceneFrame,
 } from "@nustackdev/tape-scene";
+import { installEdit } from "./edit";
 import { installFocus } from "./focus";
 import { InputPlayer } from "./input";
 import { type Body, isTape, TAG, type ToParent, type ToShim } from "./protocol";
@@ -206,6 +207,8 @@ declare global {
 	installFocus();
 	// Nor scroll the page around it, by scrollIntoView or by an edit.
 	installScroll();
+	// And edit text by hand: Firefox's editor scrolls the page to its caret.
+	installEdit();
 	// A replayed click or submit must never navigate the replay away. Bubble phase on
 	// window runs last, so the app's own handlers had their say.
 	window.addEventListener("click", (e) => {
