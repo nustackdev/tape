@@ -223,7 +223,14 @@ export class InputPlayer {
 					...mods(e.m),
 				};
 				const go = target.dispatchEvent(new KeyboardEvent(e.k, init));
-				if (!go || e.m & (2 | 4 | 8)) return;
+				if (!go) return;
+				if (e.m & (2 | 4 | 8)) {
+					// Of the shortcuts, only select all edits what the replay shows; copy and paste reach nothing.
+					if (e.k === "keydown" && !(e.m & 4) && e.key.toLowerCase() === "a") {
+						this.selectAll(activeElement() ?? doc.body);
+					}
+					return;
+				}
 				// The text goes where focus is now: a keydown handler may have moved it, and in a
 				// browser the key then types into the new place. Text goes in on the character
 				// step, deleting on keydown. Takes from before keypress was recorded do it all on keydown.
@@ -247,6 +254,23 @@ export class InputPlayer {
 				return;
 			}
 		}
+	}
+
+	/** Cmd/Ctrl+A nobody handled: the field's text, the editing host's content, or the page. */
+	private selectAll(target: Element) {
+		if (isField(target)) {
+			target.select();
+			return;
+		}
+		const sel = this.doc.getSelection();
+		if (!sel) return;
+		if (target instanceof HTMLElement && target.isContentEditable) {
+			let host = target;
+			while (host.parentElement?.isContentEditable) host = host.parentElement;
+			sel.selectAllChildren(host);
+			return;
+		}
+		sel.selectAllChildren(this.doc.body);
 	}
 
 	/** What the browser does for a key nobody handled. */
