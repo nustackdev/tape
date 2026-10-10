@@ -72,6 +72,12 @@ jobs:
           for p in scene player recorder; do
             (cd packages/$p && pnpm pack --pack-destination ../../.pack)
           done
-          for t in .pack/nustackdev-tape-scene-*.tgz .pack/nustackdev-tape-player-*.tgz .pack/nustackdev-tape-[0-9]*.tgz; do
-            npm publish "$t" --access public
+          for p in scene player recorder; do
+            name=$(node -p "require('./packages/$p/package.json').name")
+            # Already out (a re-run, or one that got through before a failure): skip it.
+            if npm view "$name@${GITHUB_REF_NAME#v}" version >/dev/null 2>&1; then
+              echo "$name@${GITHUB_REF_NAME#v} is already published"
+              continue
+            fi
+            npm publish .pack/$(echo "$name" | sed 's|^@||; s|/|-|')-${GITHUB_REF_NAME#v}.tgz --access public
           done
