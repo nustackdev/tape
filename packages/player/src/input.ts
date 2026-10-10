@@ -70,7 +70,14 @@ export class InputPlayer {
 	private x = -1;
 	private y = -1;
 
-	constructor(private doc: Document) {
+	/**
+	 * @param chars the take recorded keypress, the character step. Without it
+	 * (older takes) text goes in on keydown.
+	 */
+	constructor(
+		private doc: Document,
+		private chars: boolean,
+	) {
 		const self = this;
 		const proto = Element.prototype;
 		proto.setPointerCapture = function (this: Element) {
@@ -195,6 +202,7 @@ export class InputPlayer {
 				return;
 			}
 			case "keydown":
+			case "keypress":
 			case "keyup": {
 				// Typing into a field doesn't make the next focus "keyboard"; Tab and friends do.
 				if (
@@ -208,16 +216,19 @@ export class InputPlayer {
 				const init: KeyboardEventInit = {
 					key: e.key,
 					code: e.code,
-					repeat: !!e.r,
+					repeat: !!e.rep,
 					bubbles: true,
 					cancelable: true,
 					composed: true,
 					...mods(e.m),
 				};
 				const go = target.dispatchEvent(new KeyboardEvent(e.k, init));
+				if (!go || e.m & (2 | 4 | 8)) return;
 				// The text goes where focus is now: a keydown handler may have moved it, and in a
-				// browser the key then types into the new place.
-				if (e.k === "keydown" && go && !(e.m & (2 | 4 | 8))) {
+				// browser the key then types into the new place. Text goes in on the character
+				// step, deleting on keydown. Takes from before keypress was recorded do it all on keydown.
+				const deletes = e.key === "Backspace" || e.key === "Delete";
+				if (e.k === "keypress" || (e.k === "keydown" && (deletes || !this.chars))) {
 					this.edit(activeElement() ?? doc.body, e.key);
 				}
 				return;

@@ -224,7 +224,11 @@ declare global {
 
 	const boot = (s: Scene, withInput: boolean) => {
 		scene = s;
-		if (withInput && s.events?.length) input = new InputPlayer(document);
+		if (withInput && s.events?.length)
+			input = new InputPlayer(
+				document,
+				s.events.some((e) => e.k === "keypress"),
+			);
 		installPseudo(document);
 		// The take's randomness and clock, so ids the app mints match the ones in the frames.
 		if (s.meta.seed !== undefined && s.meta.epoch !== undefined) {

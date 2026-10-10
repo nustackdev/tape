@@ -88,9 +88,10 @@ export const INJECT_SCRIPT = `(() => {
 	addEventListener("contextmenu", button("contextmenu"), true);
 	const key = (k) => (e) => {
 		if (!e.isTrusted || e.isComposing) return;
-		ev({ k, key: e.key, code: e.code, m: mods(e), ...(e.repeat ? { r: 1 } : {}) });
+		ev({ k, key: e.key, code: e.code, m: mods(e), ...(e.repeat ? { rep: 1 } : {}) });
 	};
 	addEventListener("keydown", key("keydown"), true);
+	addEventListener("keypress", key("keypress"), true);
 	addEventListener("keyup", key("keyup"), true);
 	const scrolled = new Map();
 	addEventListener("scroll", (e) => {

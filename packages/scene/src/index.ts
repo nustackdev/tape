@@ -108,7 +108,12 @@ export type SceneEvent = Stamp &
 				b: number;
 				m: number;
 		  }
-		| { t: Ms; k: "keydown" | "keyup"; key: string; code: string; m: number; r?: 1 }
+		/**
+		 * Keys. `keypress` is the character step, its own task in the browser
+		 * after keydown's: the text goes in there, so it carries its own clock.
+		 * `rep` marks a held key repeating.
+		 */
+		| { t: Ms; k: "keydown" | "keypress" | "keyup"; key: string; code: string; m: number; rep?: 1 }
 		/** An element (or the document) scrolled to x, y. */
 		| { t: Ms; k: "scroll"; p: ElementPath; x: number; y: number }
 		/** An input or textarea now holds `v`. Keeps typed text right whatever the keys did. */
