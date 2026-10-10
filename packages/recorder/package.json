@@ -1,0 +1,26 @@
+{
+	"name": "@nustackdev/tape",
+	"description": "The tape CLI: record a websocket UI session through a proxy, prepare an app bundle for replay.",
+	"version": "0.1.0",
+	"type": "module",
+	"bin": {
+		"tape": "./dist/cli.js"
+	},
+	"files": [
+		"dist"
+	],
+	"scripts": {
+		"build": "tsup src/cli.ts --format esm --clean --target node20",
+		"typecheck": "tsc --noEmit",
+		"test": "vitest run"
+	},
+	"dependencies": {
+		"@nustackdev/tape-player": "workspace:*",
+		"@nustackdev/tape-scene": "workspace:*",
+		"ws": "^8.18.3"
+	},
+	"devDependencies": {
+		"@types/node": "^24.10.1",
+		"@types/ws": "^8.18.1"
+	}
+}
