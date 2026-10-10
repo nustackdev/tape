@@ -32,6 +32,10 @@ export interface SceneMeta {
 	end?: Ms;
 	userAgent?: string;
 	title?: string;
+	/** Seed of the shared generator, see ./determinism.ts. */
+	seed?: number;
+	/** Browser Date.now() at t = 0. */
+	epoch?: number;
 }
 
 /** A websocket the page opened during the take, in open order. */
@@ -90,21 +94,26 @@ export type ElementPath = string;
  * Input, recorded so local UI replays too: menus, focus, typing, hover. The
  * player feeds these into the app as DOM events.
  */
-export type SceneEvent =
+/** On every event: `w` the browser clock while it was handled, `r` the random draws before it. */
+type Stamp = { w?: number; r?: number };
+
+export type SceneEvent = Stamp &
 	/** Pointer buttons and clicks at viewport coordinates. `b` is the button, `m` modifier bits. */
-	| {
-			t: Ms;
-			k: "down" | "up" | "click" | "dblclick" | "contextmenu";
-			x: number;
-			y: number;
-			b: number;
-			m: number;
-	  }
-	| { t: Ms; k: "keydown" | "keyup"; key: string; code: string; m: number; r?: 1 }
-	/** An element (or the document) scrolled to x, y. */
-	| { t: Ms; k: "scroll"; p: ElementPath; x: number; y: number }
-	/** An input or textarea now holds `v`. Keeps typed text right whatever the keys did. */
-	| { t: Ms; k: "value"; p: ElementPath; v: string };
+	(
+		| {
+				t: Ms;
+				k: "down" | "up" | "click" | "dblclick" | "contextmenu";
+				x: number;
+				y: number;
+				b: number;
+				m: number;
+		  }
+		| { t: Ms; k: "keydown" | "keyup"; key: string; code: string; m: number; r?: 1 }
+		/** An element (or the document) scrolled to x, y. */
+		| { t: Ms; k: "scroll"; p: ElementPath; x: number; y: number }
+		/** An input or textarea now holds `v`. Keeps typed text right whatever the keys did. */
+		| { t: Ms; k: "value"; p: ElementPath; v: string }
+	);
 
 export interface Scene {
 	tape: typeof SCENE_VERSION;
@@ -167,3 +176,5 @@ export function base64ToBytes(b64: string): Uint8Array {
 	for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
 	return out;
 }
+
+export { installClock, installRandom, type Randomness } from "./determinism";

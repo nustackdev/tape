@@ -7,7 +7,14 @@
 // delivers whatever is due: server frames, and the recorded input as DOM
 // events (./input.ts). What the app sends goes nowhere.
 
-import { base64ToBytes, type Scene, type SceneFrame } from "@nustackdev/tape-scene";
+import {
+	base64ToBytes,
+	installClock,
+	installRandom,
+	type Randomness,
+	type Scene,
+	type SceneFrame,
+} from "@nustackdev/tape-scene";
 import { installFocus } from "./focus";
 import { InputPlayer } from "./input";
 import { type Body, isTape, TAG, type ToParent, type ToShim } from "./protocol";
@@ -204,6 +211,10 @@ declare global {
 	/** How long recorded navigation waits for the replayed input to cause it before forcing it. */
 	const NAV_GRACE_MS = 300;
 	let input: InputPlayer | null = null;
+	let rnd: Randomness | null = null;
+	/** The clock while a replayed event is handled, as it read in the take. */
+	let pinned: number | null = null;
+	let pumping = false;
 	let ev = 0;
 	let ptr = -1;
 
@@ -211,6 +222,12 @@ declare global {
 		scene = s;
 		if (withInput && s.events?.length) input = new InputPlayer(document);
 		installPseudo(document);
+		// The take's randomness and clock, so ids the app mints match the ones in the frames.
+		if (s.meta.seed !== undefined && s.meta.epoch !== undefined) {
+			rnd = installRandom(window, s.meta.seed);
+			const epoch = s.meta.epoch;
+			installClock(window, () => pinned ?? Math.round(epoch + Math.max(0, now)));
+		}
 		byS = s.sockets.map(() => []);
 		for (const frame of s.frames) {
 			byS[frame.s]?.push({ frame, data: frame.x ? frame.d : base64ToBytes(frame.d) });
@@ -240,20 +257,39 @@ declare global {
 		for (const ws of live) ws.claim();
 	};
 
+	/**
+	 * Play due events one task each. The recorder held the clock until the task
+	 * after an event, so whatever the event set off (microtasks, a framework's
+	 * batched render) saw the pinned time; the replay does the same.
+	 */
+	const pump = async () => {
+		if (pumping || !scene || !input) return;
+		pumping = true;
+		try {
+			const events = scene.events ?? [];
+			while (ev < events.length) {
+				const e = events[ev];
+				if (!e || e.t > now) break;
+				ev++;
+				if (rnd && e.r !== undefined) rnd.seek(e.r);
+				pinned = e.w ?? null;
+				input.play(e);
+				await new Promise((r) => setTimeout(r, 0));
+				pinned = null;
+			}
+		} finally {
+			pumping = false;
+		}
+	};
+
 	let nav = 0;
 	const tick = (t: number) => {
 		if (!scene) return;
 		now = t;
 		// Input waits for the app's first socket: before that there is nothing on screen to act on.
 		if (input && opened) {
-			const events = scene.events ?? [];
+			void pump();
 			const track = scene.pointer;
-			while (ev < events.length) {
-				const e = events[ev];
-				if (!e || e.t > now) break;
-				ev++;
-				input.play(e);
-			}
 			ptr = InputPlayer.seek(track, ptr, now);
 			const p = track[ptr];
 			if (p && p[3] !== 3) input.move(p[1], p[2]);

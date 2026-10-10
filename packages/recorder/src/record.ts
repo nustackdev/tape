@@ -44,6 +44,8 @@ class Take {
 	path = "/";
 	viewport: Viewport = { width: 1280, height: 800, dpr: 1 };
 	userAgent?: string;
+	seed?: number;
+	epoch?: number;
 	local: Record<string, string> = {};
 	resized = false;
 	sockets: SceneSocket[] = [];
@@ -75,6 +77,7 @@ class Take {
 					? { start: Math.round(this.pointer[0][0] - LEAD_MS) }
 					: {}),
 				userAgent: this.userAgent,
+				...(this.seed !== undefined ? { seed: this.seed, epoch: this.epoch } : {}),
 				...(title ? { title } : {}),
 			},
 			storage: { local: this.local },
@@ -196,6 +199,10 @@ export async function record(opts: RecordOptions): Promise<Recorder> {
 					mine.viewport = m.viewport as Viewport;
 					mine.userAgent = String(m.userAgent);
 					mine.local = (m.local as Record<string, string>) ?? {};
+					if (typeof m.seed === "number" && typeof m.now === "number") {
+						mine.seed = m.seed;
+						mine.epoch = Math.round(m.now - t);
+					}
 					break;
 				case "p":
 					mine.pointer.push([mine.mark(t), Number(m.x), Number(m.y), Number(m.k) as PointerKind]);

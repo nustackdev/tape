@@ -4,7 +4,10 @@
 // local UI replays too. It opens its own socket to the recorder and
 // never touches the app's.
 //
-// Kept as plain browser JS in a string so it ships exactly as written.
+// Kept as plain browser JS in a string so it ships exactly as written. The
+// determinism helpers come in as source, the same code the player runs.
+
+import { installClock, installRandom } from "@nustackdev/tape-scene";
 
 export const INJECT_PATH = "/__tape/inject.js";
 export const EVENTS_PATH = "/__tape/events";
@@ -12,6 +15,21 @@ export const EVENTS_PATH = "/__tape/events";
 export const INJECT_SCRIPT = `(() => {
 	if (window.__tapeRecorder) return;
 	window.__tapeRecorder = true;
+
+	// Shared randomness, and a clock that holds still while an input event is handled.
+	const seed = (Math.random() * 4294967296) >>> 0;
+	const rnd = (${installRandom.toString()})(window, seed);
+	const realNow = Date.now.bind(Date);
+	let pinned = null;
+	(${installClock.toString()})(window, () => pinned ?? realNow());
+	const pin = () => {
+		if (pinned === null) {
+			pinned = realNow();
+			setTimeout(() => { pinned = null; });
+		}
+		return pinned;
+	};
+
 	const proto = location.protocol === "https:" ? "wss:" : "ws:";
 	const ws = new WebSocket(proto + "//" + location.host + "${EVENTS_PATH}");
 	const queue = [];
@@ -33,7 +51,7 @@ export const INJECT_SCRIPT = `(() => {
 		}
 	} catch {}
 	const viewport = () => ({ width: innerWidth, height: innerHeight, dpr: devicePixelRatio });
-	send({ type: "hello", url: location.href, path: here(), viewport: viewport(), userAgent: navigator.userAgent, local });
+	send({ type: "hello", url: location.href, path: here(), viewport: viewport(), userAgent: navigator.userAgent, local, seed, now: realNow() });
 
 	let x = -1, y = -1, queued = false;
 	addEventListener("pointermove", (e) => {
@@ -54,7 +72,11 @@ export const INJECT_SCRIPT = `(() => {
 		}
 		return parts.join("/");
 	};
-	const ev = (m) => send({ type: "e", e: m });
+	// Draws are counted before pinning, so the replay seeks to the same point before the same event.
+	const ev = (m) => {
+		const r = rnd.draws();
+		send({ type: "e", e: { ...m, w: pin(), r } });
+	};
 	const button = (k) => (e) => {
 		if (e.isTrusted) ev({ k, x: e.clientX, y: e.clientY, b: e.button, m: mods(e) });
 	};

@@ -63,10 +63,12 @@ Browsers don't let a script do everything a real user does, so the shim fills in
 - **hover and focus styles** come from copies of the app's `:hover` and `:focus` rules, keyed to attributes the shim sets
 - **typing** is done by hand after each unhandled keydown, and fields are reset to their recorded value as they go
 - **scroll** positions are recorded and set, pointer capture is patched for drags
+- **randomness and time** are shared with the take: `Math.random` and `crypto` draw from one seeded generator, and `Date` reads what it read in the take while each event is handled. so ids the app mints in the browser come out the same as the ones the server frames name
+- **hover** follows the page changing under a pointer that stands still, as in a browser
 
 What the app sends goes nowhere. Links and form submits never navigate the replay. `input={false}` on `<LiveScene>` plays server frames only.
 
-The recorder logs every key, so record in a session with nothing secret in it.
+The recorder logs every key, so record in a session with nothing secret in it. While recording, the page's `Math.random` and `crypto` come from the seeded generator, so don't record anything that needs real randomness.
 
 ## Develop
 
