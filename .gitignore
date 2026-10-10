@@ -7,3 +7,4 @@ _playground/
 
 # copied in from the root on pack
 packages/*/LICENSE.md
+.pack/

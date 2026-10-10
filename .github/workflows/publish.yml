@@ -2,10 +2,10 @@
 # in lockstep: @nustackdev/tape-scene, @nustackdev/tape-player, @nustackdev/tape.
 # Manual "Run workflow" dispatch builds and checks but does NOT publish.
 #
-# Setup once:
-#   1. Generate a granular npm access token scoped to @nustackdev/*, with
-#      publish permission, bypass-2FA enabled.
-#   2. Add it as GitHub repo secret `NPM_TOKEN`.
+# No token: npm trusted publishing. Each package trusts this workflow
+# (npmjs.com, package settings, or `npm trust github <pkg> --file
+# publish.yml --repo nustackdev/tape --allow-publish`), and the job's GitHub
+# identity is what npm checks. Provenance comes with it.
 #
 # Release flow:
 #   1. Bump `version` in all three packages/*/package.json to X.Y.Z.
@@ -62,8 +62,16 @@ jobs:
             fi
           done
 
+      # pnpm packs, so workspace:* becomes the real version. npm publishes,
+      # since trusted publishing needs npm 11.5.1 or later.
       - name: Publish
         if: startsWith(github.ref, 'refs/tags/')
-        run: pnpm -r publish --access public --no-git-checks --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          npm install -g npm@latest
+          mkdir -p .pack
+          for p in scene player recorder; do
+            (cd packages/$p && pnpm pack --pack-destination ../../.pack)
+          done
+          for t in .pack/nustackdev-tape-scene-*.tgz .pack/nustackdev-tape-player-*.tgz .pack/nustackdev-tape-[0-9]*.tgz; do
+            npm publish "$t" --access public
+          done
