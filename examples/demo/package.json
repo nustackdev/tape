@@ -1,0 +1,22 @@
+{
+	"name": "tape-demo",
+	"private": true,
+	"description": "A bare page playing a scene. Put a bundle in public/app and a scene at public/scene.json.",
+	"type": "module",
+	"scripts": {
+		"dev": "vite",
+		"build": "vite build",
+		"typecheck": "tsc --noEmit"
+	},
+	"dependencies": {
+		"@nustackdev/tape-player": "workspace:*",
+		"react": "^19.2.0",
+		"react-dom": "^19.2.0"
+	},
+	"devDependencies": {
+		"@types/react": "^19.2.7",
+		"@types/react-dom": "^19.2.3",
+		"@vitejs/plugin-react": "^5.1.1",
+		"vite": "^7.3.1"
+	}
+}
