@@ -36,7 +36,19 @@ export interface LiveSceneProps {
 	/** Pause at the end before looping, ms. Default 2500. */
 	hold?: number;
 	speed?: number;
-	cursor?: boolean;
+	/**
+	 * The cursor. False for none, or your own node, drawn with its top left on
+	 * the pointer tip. It sits in a box carrying `data-down="1"` while pressed,
+	 * for styling a press. Sizes are in the recorded viewport's px. Default: an arrow.
+	 */
+	cursor?: boolean | ReactNode;
+	/**
+	 * Drawn at each click, centred on it, for `clickMs`. Animate it with CSS.
+	 * Null for none. Default: a ripple.
+	 */
+	click?: ReactNode;
+	/** How long a click stays drawn, ms. Default 450. */
+	clickMs?: number;
 	/** Replay recorded input into the app too, so local UI plays: menus, typing, hover. Default true. */
 	input?: boolean;
 	/**
@@ -222,6 +234,8 @@ export function LiveScene({
 	hold = 2500,
 	speed = 1,
 	cursor = true,
+	click,
+	clickMs = 450,
 	input = true,
 	storage,
 	label,
@@ -396,7 +410,14 @@ export function LiveScene({
 							}}
 						/>
 					))}
-					{cursor && !prefersReducedMotion() && <Cursor ref={pointer} />}
+					{cursor !== false && !prefersReducedMotion() && (
+						<Cursor
+							ref={pointer}
+							arrow={cursor === true ? undefined : cursor}
+							click={click}
+							clickMs={clickMs}
+						/>
+					)}
 				</div>
 			)}
 		</div>

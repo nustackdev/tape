@@ -56,6 +56,12 @@ import { LiveScene } from "@nustackdev/tape-player";
 
 The frame has a fixed aspect, empty until the replay is on screen, so nothing shifts. It loads after first paint and only near the viewport, plays in view, pauses off screen, loops. With `prefers-reduced-motion` it shows the last frame, still. The app renders at the recorded viewport size and is scaled to fit.
 
+The cursor and the click ripple are yours to draw: `cursor` takes a node, drawn with its top left on the pointer tip, its box marked `data-down="1"` while pressed; `click` takes a node drawn centred on each click for `clickMs`, animated with your CSS. `cursor={false}` and `click={null}` turn them off.
+
+```tsx
+<LiveScene app={app} scene={scene} cursor={<MyCursor />} click={<MyClick />} clickMs={480} />
+```
+
 ## What replays
 
 - every server frame, on its recorded time, per socket. sockets are matched by url in open order, so a reconnect in the take replays as one
