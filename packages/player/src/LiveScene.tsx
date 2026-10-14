@@ -424,6 +424,8 @@ export function LiveScene({
 					)}
 				</div>
 			)}
+			{/* Over the replay, so touch never reaches it: iOS scrolls an iframe's page despite pointer-events none. A swipe here scrolls the page around. */}
+			<div style={{ position: "absolute", inset: 0 }} />
 		</div>
 	);
 }
