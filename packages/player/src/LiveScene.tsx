@@ -21,7 +21,7 @@ import {
 	useState,
 } from "react";
 import { Cursor, type CursorHandle } from "./cursor";
-import { type Body, isTape, TAG, type ToParent, type ToShim } from "./protocol";
+import { type Body, isTape, TAG, TAKE_KEY, type ToParent, type ToShim } from "./protocol";
 
 export interface LiveSceneProps {
 	/** Url of the bundle's index.html, as `tape bundle` wrote it. */
@@ -67,6 +67,8 @@ export interface LiveSceneProps {
 }
 
 const FADE_MS = 400;
+/** Ids for takes, unique across every scene on the page. */
+let takes = 0;
 const scenes = new Map<string, Promise<Scene>>();
 
 function loadScene(src: string | Scene): Promise<Scene> {
@@ -120,6 +122,7 @@ interface TakeProps {
 function Take(props: TakeProps) {
 	const { app, scene, label, live, on } = props;
 	const frame = useRef<HTMLIFrameElement>(null);
+	const [id] = useState(() => String(takes++));
 	const ref = useRef(props);
 	ref.current = props;
 	/** Where this run is, for the cursor when it goes live. */
@@ -163,7 +166,8 @@ function Take(props: TakeProps) {
 		};
 
 		const onMessage = (ev: MessageEvent) => {
-			if (ev.source !== win || !isTape<ToParent>(ev.data)) return;
+			// By take, not by ev.source: WebKit sometimes gives this page as the source.
+			if (!isTape<ToParent>(ev.data) || ev.data.take !== id) return;
 			const m = ev.data;
 			const p = ref.current;
 			if (m.type === "hello")
@@ -187,7 +191,7 @@ function Take(props: TakeProps) {
 			window.removeEventListener("message", onMessage);
 			cancelAnimationFrame(raf);
 		};
-	}, [scene]);
+	}, [scene, id]);
 
 	// A take loaded behind the live one takes the cursor over where it stands.
 	useEffect(() => {
@@ -198,7 +202,7 @@ function Take(props: TakeProps) {
 	return (
 		<iframe
 			ref={frame}
-			src={app}
+			src={`${app}#${TAKE_KEY}=${id}`}
 			title={label ?? "live scene"}
 			aria-hidden
 			tabIndex={-1}

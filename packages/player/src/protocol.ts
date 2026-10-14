@@ -14,16 +14,26 @@ export type ToShim =
 	/** Deliver everything up to `t`. */
 	| { tape: typeof TAG; type: "tick"; t: number };
 
-export type ToParent =
-	/** The shim is installed and waits for its scene. */
-	| { tape: typeof TAG; type: "hello" }
-	/** The app opened its first socket, the clock may start. */
-	| { tape: typeof TAG; type: "open" }
-	/** The first frames are on screen. */
-	| { tape: typeof TAG; type: "painted" };
+/**
+ * Every message to the parent carries the take it comes from, as the player
+ * put it in the iframe's url. The parent tells takes apart by it, not by the
+ * event's source: WebKit sometimes reports the parent page itself there.
+ */
+export type ToParent = { tape: typeof TAG; take: string } & ToParentBody;
 
-/** A message without its tag. Distributes over the union, unlike a bare Omit. */
-export type Body<M> = M extends unknown ? Omit<M, "tape"> : never;
+type ToParentBody =
+	/** The shim is installed and waits for its scene. */
+	| { type: "hello" }
+	/** The app opened its first socket, the clock may start. */
+	| { type: "open" }
+	/** The first frames are on screen. */
+	| { type: "painted" };
+
+/** The url hash key the take id travels in. */
+export const TAKE_KEY = "tape-take";
+
+/** A message without its envelope. Distributes over the union, unlike a bare Omit. */
+export type Body<M> = M extends unknown ? Omit<M, "tape" | "take"> : never;
 
 export function isTape<T extends { tape: string }>(data: unknown): data is T {
 	return typeof data === "object" && data !== null && (data as { tape?: unknown }).tape === TAG;

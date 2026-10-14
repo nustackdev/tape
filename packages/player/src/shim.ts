@@ -18,7 +18,7 @@ import {
 import { installEdit } from "./edit";
 import { installFocus } from "./focus";
 import { InputPlayer } from "./input";
-import { type Body, isTape, TAG, type ToParent, type ToShim } from "./protocol";
+import { type Body, isTape, TAG, TAKE_KEY, type ToParent, type ToShim } from "./protocol";
 import { installPseudo } from "./pseudo";
 import { installScroll } from "./scroll";
 
@@ -39,7 +39,9 @@ declare global {
 		},
 	};
 
-	const post = (m: Body<ToParent>) => window.parent.postMessage({ tape: TAG, ...m }, "*");
+	// Read now: the recorded path replaces the url, hash and all, before the app starts.
+	const take = new URLSearchParams(location.hash.slice(1)).get(TAKE_KEY) ?? "";
+	const post = (m: Body<ToParent>) => window.parent.postMessage({ tape: TAG, take, ...m }, "*");
 
 	// Resolved now: once the path moves to the recorded one, relative urls would resolve elsewhere.
 	const deferred: { src: string; attrs: [string, string][] }[] = [];
