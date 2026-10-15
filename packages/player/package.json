@@ -1,6 +1,6 @@
 {
 	"name": "@nustackdev/tape-player",
-	"description": "Replay a tape scene: the real app in an iframe, its websocket fed from the recording, a cursor on top.",
+	"description": "Replay a tape scene: the real app in an iframe, its websocket fed from the recording, on a clock the page controls, with scrub, chapters and captions.",
 	"version": "0.1.6",
 	"license": "Apache-2.0",
 	"repository": {
@@ -17,7 +17,8 @@
 			"types": "./dist/index.d.ts",
 			"import": "./dist/index.js"
 		},
-		"./shim.js": "./dist/shim.js"
+		"./shim.js": "./dist/shim.js",
+		"./tape.css": "./dist/tape.css"
 	},
 	"files": [
 		"dist"
@@ -32,13 +33,19 @@
 		"@nustackdev/tape-scene": "workspace:*"
 	},
 	"peerDependencies": {
-		"react": ">=18"
+		"react": ">=18",
+		"react-dom": ">=18"
 	},
 	"devDependencies": {
 		"@types/react": "^19.2.7",
-		"react": "^19.2.0"
+		"@types/react-dom": "^19.2.3",
+		"react": "^19.2.0",
+		"react-dom": "^19.2.0"
 	},
 	"publishConfig": {
 		"access": "public"
-	}
+	},
+	"sideEffects": [
+		"*.css"
+	]
 }

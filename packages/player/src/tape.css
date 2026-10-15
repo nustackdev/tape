@@ -1,0 +1,515 @@
+/* @nustackdev/tape-player — styles for the Tape parts. Import once:
+ *   import "@nustackdev/tape-player/tape.css";
+ * Themed by --tape-* variables, see index.ts. */
+
+/* Tape.Frame — the frame, the scaled app inside it, pointer and clicks over it.
+ * Themed by --tape-* variables, see tape/index.ts. */
+
+.tape-frame {
+	position: relative;
+	width: 100%;
+	overflow: hidden;
+	background: var(--tape-bg, #f4f4f5);
+}
+
+.tape-stage {
+	position: absolute;
+	left: 0;
+	top: 0;
+	transform-origin: 0 0;
+	transition: opacity 200ms ease;
+}
+
+.tape-take {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	border: 0;
+	display: block;
+	pointer-events: none;
+	color-scheme: normal;
+	transition-property: opacity;
+	transition-timing-function: ease;
+}
+
+.tape-pointer {
+	position: absolute;
+	left: 0;
+	top: 0;
+	z-index: 3;
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity 150ms;
+	will-change: transform;
+}
+
+/* The default pointer. Round joins on a stroke the colour of the fill round every corner. */
+.tape-pebble {
+	display: block;
+	/* The drawn tip (4.5, 3.5 of 24, at 22px) sits on the pointer. */
+	margin: -3px 0 0 -4px;
+	overflow: visible;
+	transform-origin: 4px 3px;
+	transition: transform 120ms ease-out;
+}
+.tape-pebble-edge {
+	fill: #fff;
+	stroke: #fff;
+	stroke-width: 6;
+	stroke-linejoin: round;
+}
+.tape-pebble-body {
+	fill: var(--tape-accent, #7c5cff);
+	stroke: var(--tape-accent, #7c5cff);
+	stroke-width: 2.6;
+	stroke-linejoin: round;
+}
+[data-down="1"] > .tape-pebble {
+	transform: scale(0.86);
+}
+
+.tape-clicks {
+	position: absolute;
+	inset: 0;
+	z-index: 2;
+	pointer-events: none;
+}
+
+/* A click, in the recorded viewport's px: the disc is centred on it. */
+.tape-click {
+	position: absolute;
+	left: 0;
+	top: 0;
+	width: 0;
+	height: 0;
+}
+.tape-click::after {
+	content: "";
+	position: absolute;
+	left: -20px;
+	top: -20px;
+	width: 40px;
+	height: 40px;
+	border-radius: 50%;
+	background: color-mix(in oklab, var(--tape-accent, #7c5cff) 32%, transparent);
+	box-shadow: inset 0 0 0 2px color-mix(in oklab, var(--tape-accent, #7c5cff) 75%, transparent);
+	animation: tape-click 480ms ease-out forwards;
+}
+@keyframes tape-click {
+	from {
+		transform: scale(0.3);
+		opacity: 1;
+	}
+	to {
+		transform: scale(1.5);
+		opacity: 0;
+	}
+}
+
+.tape-overlay {
+	position: absolute;
+	inset: 0;
+	z-index: 4;
+}
+
+.tape-loading {
+	position: absolute;
+	inset: 0;
+	background:
+		linear-gradient(
+			100deg,
+			transparent 30%,
+			var(--tape-shimmer, rgb(0 0 0 / 0.04)) 50%,
+			transparent 70%
+		)
+		0 0 / 200% 100%;
+	animation: tape-shimmer 1.4s linear infinite;
+}
+@keyframes tape-shimmer {
+	to {
+		background-position: -200% 0;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.tape-loading {
+		animation: none;
+	}
+	.tape-click::after {
+		animation-duration: 1ms;
+	}
+}
+
+/* Tape.Scrubber — the frame as one control: a pill pointer on hover, a track at
+ * the finger while pressed. Everything dark glass with white on top, so it
+ * reads over any app screen in both themes. */
+
+.tape-scrub {
+	position: absolute;
+	inset: 0;
+	touch-action: pan-y pinch-zoom;
+	user-select: none;
+	-webkit-user-select: none;
+	-webkit-touch-callout: none;
+	-webkit-tap-highlight-color: transparent;
+	outline: none;
+}
+.tape-scrub:focus-visible {
+	box-shadow: inset 0 0 0 var(--tape-ring-width, 2px) var(--tape-ring, var(--tape-accent, #7c5cff));
+}
+
+/* The one shape, floating over the window: a pill following the mouse (a
+ * bare dot under a finger), stretched into the scrubber while pressed. Scrubber.tsx sets and animates its box (left, top, size,
+ * radius); here are its looks and what shows inside it per phase. Dark glass
+ * with white on top, so it reads over any app screen in both themes. */
+.tape-scrub-blob {
+	position: fixed;
+	z-index: 60;
+	left: 0;
+	top: 0;
+	width: 64px;
+	height: 40px;
+	border-radius: 20px;
+	overflow: hidden;
+	color: #fff;
+	background: color-mix(in oklab, #000 62%, transparent);
+	backdrop-filter: blur(10px) saturate(1.2);
+	-webkit-backdrop-filter: blur(10px) saturate(1.2);
+	box-shadow:
+		0 0 0 1px rgb(255 255 255 / 0.14),
+		0 10px 28px rgb(0 0 0 / 0.26);
+	pointer-events: none;
+	opacity: 0;
+	scale: 0.6;
+	transition:
+		opacity 160ms ease,
+		scale 220ms cubic-bezier(0.2, 0.9, 0.3, 1.25);
+	will-change: left, top, width, height;
+}
+.tape-scrub-shown {
+	opacity: 1;
+	scale: 1;
+}
+/* Morphing: its box is the geometry, so no pop-in scale on top of it. */
+[data-phase="open"].tape-scrub-blob,
+[data-phase="closing"].tape-scrub-blob {
+	scale: 1;
+	transition: opacity 160ms ease;
+}
+@media (hover: hover) and (pointer: fine) {
+	.tape-scrub {
+		cursor: none;
+	}
+}
+
+/* The arrows sit at the pill's ends, so they ride out as it stretches. */
+.tape-scrub-chev {
+	position: absolute;
+	top: 50%;
+	margin-top: -9px;
+	transition:
+		opacity 140ms ease,
+		translate 220ms ease;
+}
+.tape-scrub-chev-l {
+	left: 11px;
+}
+.tape-scrub-chev-r {
+	right: 11px;
+}
+[data-hover] .tape-scrub-chev-l {
+	translate: -1px 0;
+}
+[data-hover] .tape-scrub-chev-r {
+	translate: 1px 0;
+}
+/* Stretched: they give way to the track right as it starts to grow. */
+[data-phase="open"] .tape-scrub-chev {
+	opacity: 0;
+	transition: opacity 90ms ease;
+}
+/* Folding back: they return as it lands. */
+[data-phase="closing"] .tape-scrub-chev {
+	opacity: 1;
+	transition-delay: 120ms;
+}
+
+/* The track and its step, laid out at the full width while the shape grows. */
+.tape-scrub-inner {
+	position: absolute;
+	left: 0;
+	top: 0;
+	box-sizing: border-box;
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+	gap: 12px;
+	padding: 0 20px 4px;
+	opacity: 0;
+	transition: opacity 90ms ease;
+}
+[data-phase="open"] .tape-scrub-inner {
+	opacity: 1;
+	transition: opacity 200ms ease 140ms;
+}
+
+/* The step under the playhead; swaps with a short rise when it changes. */
+.tape-scrub-title {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-width: 0;
+	font-size: var(--tape-fs-title, 13px);
+	font-weight: 600;
+	line-height: 1.2;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	animation: tape-swap 200ms ease-out both;
+}
+.tape-scrub-title b {
+	flex: none;
+	display: grid;
+	place-items: center;
+	width: 20px;
+	height: 20px;
+	border-radius: 50%;
+	font-size: var(--tape-fs-num, 11px);
+	background: var(--tape-accent, #7c5cff);
+}
+@keyframes tape-swap {
+	from {
+		opacity: 0;
+		transform: translateY(5px);
+	}
+	to {
+		opacity: 1;
+		transform: none;
+	}
+}
+
+.tape-scrub-rail {
+	position: relative;
+	height: 4px;
+	border-radius: 2px;
+	background: rgb(255 255 255 / 0.22);
+}
+.tape-scrub-fill {
+	position: absolute;
+	inset: 0;
+	border-radius: 2px;
+	background: var(--tape-accent, #7c5cff);
+	transform-origin: 0 50%;
+}
+.tape-scrub-tick {
+	position: absolute;
+	top: -3px;
+	width: 2px;
+	height: 10px;
+	margin-left: -1px;
+	border-radius: 1px;
+	background: rgb(255 255 255 / 0.4);
+	transition: background 160ms;
+}
+.tape-scrub-passed {
+	background: var(--tape-accent, #7c5cff);
+}
+.tape-scrub-head {
+	position: absolute;
+	top: 50%;
+	width: 18px;
+	height: 18px;
+	margin: -9px 0 0 -9px;
+	border-radius: 50%;
+	background: #fff;
+	box-shadow:
+		0 0 0 5px color-mix(in oklab, var(--tape-accent, #7c5cff) 45%, transparent),
+		0 1px 4px rgb(0 0 0 / 0.4);
+	animation: tape-head 280ms cubic-bezier(0.2, 0.9, 0.3, 1.4) both;
+}
+@keyframes tape-head {
+	from {
+		scale: 0.3;
+	}
+	to {
+		scale: 1;
+	}
+}
+
+/* Paused, by keyboard or reduced motion: one obvious way back. */
+.tape-scrub-play {
+	position: absolute;
+	right: 14px;
+	bottom: 14px;
+	display: grid;
+	place-items: center;
+	width: 44px;
+	height: 44px;
+	padding: 0 0 0 2px;
+	border: 0;
+	border-radius: 50%;
+	color: #fff;
+	background: color-mix(in oklab, #000 58%, transparent);
+	backdrop-filter: blur(8px);
+	-webkit-backdrop-filter: blur(8px);
+	cursor: pointer;
+	animation: tape-swap 200ms ease-out both;
+}
+.tape-scrub-play:hover {
+	background: var(--tape-accent, #7c5cff);
+}
+.tape-scrub-play-away {
+	opacity: 0;
+	pointer-events: none;
+	animation: none;
+}
+.tape-scrub-play:focus-visible {
+	outline: var(--tape-ring-width, 2px) solid var(--tape-ring, var(--tape-accent, #7c5cff));
+	outline-offset: var(--tape-ring-offset, 2px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.tape-scrub-title,
+	.tape-scrub-head,
+	.tape-scrub-play {
+		animation-duration: 1ms;
+	}
+	.tape-scrub-blob,
+	.tape-scrub-chev,
+	.tape-scrub-inner {
+		transition: none;
+	}
+}
+
+/* Tape.Caption — the playing chapter as one line. Unstyled but for layout and
+ * --tape-* colours; the host sets the type. */
+
+.tape-caption {
+	display: grid;
+}
+
+/* Every line takes the same cell, so a swap doesn't shift what is under it. */
+.tape-caption-line {
+	grid-area: 1 / 1;
+	display: flex;
+	align-items: baseline;
+	gap: 14px;
+	min-width: 0;
+	animation: tape-rise 260ms ease-out both;
+}
+@keyframes tape-rise {
+	from {
+		opacity: 0;
+		transform: translateY(4px);
+	}
+	to {
+		opacity: 1;
+		transform: none;
+	}
+}
+
+.tape-caption-num {
+	flex: none;
+	font-family: var(--tape-font-mono, ui-monospace, monospace);
+	font-size: 0.8em;
+	font-variant-numeric: tabular-nums;
+	color: var(--tape-accent-text, var(--tape-accent, #7c5cff));
+}
+.tape-caption-of {
+	color: var(--tape-ink-faint, rgb(0 0 0 / 0.35));
+}
+
+.tape-caption-text {
+	min-width: 0;
+	text-wrap: pretty;
+}
+
+.tape-caption-title {
+	font-weight: 600;
+	color: var(--tape-ink, inherit);
+}
+.tape-caption-title::after {
+	content: " ";
+}
+
+.tape-caption-note {
+	color: var(--tape-ink-soft, rgb(0 0 0 / 0.6));
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.tape-caption-line {
+		animation: none;
+	}
+}
+
+/* Tape.Chapters — a thin timeline cut into chapters, one fill along it. The
+ * cuts are holes, so it sits on anything: a page, or the bottom of a frame. */
+
+.tape-chapters {
+	position: relative;
+	height: 16px;
+	display: flex;
+	align-items: center;
+}
+
+.tape-chapters-track {
+	position: relative;
+	width: 100%;
+	height: 3px;
+	border-radius: 2px;
+	overflow: hidden;
+	background: var(--tape-track, rgb(0 0 0 / 0.1));
+	transition: height 160ms ease;
+}
+.tape-chapters:hover .tape-chapters-track {
+	height: 5px;
+}
+
+.tape-chapters-fill {
+	position: absolute;
+	inset: 0;
+	background: var(--tape-accent-text, var(--tape-accent, #7c5cff));
+	transform: scaleX(0);
+	transform-origin: 0 50%;
+	transition: transform 120ms linear;
+}
+.tape-chapters-fill[data-jump] {
+	transition: transform 420ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.tape-chapters-hits {
+	position: absolute;
+	inset: 0;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+.tape-chapters-hits li {
+	position: absolute;
+	top: 0;
+	bottom: 0;
+}
+
+.tape-chapters-hit {
+	display: block;
+	width: 100%;
+	height: 100%;
+	padding: 0;
+	border: 0;
+	background: none;
+	cursor: pointer;
+	border-radius: 4px;
+}
+.tape-chapters-hit:focus-visible {
+	outline: var(--tape-ring-width, 2px) solid var(--tape-ring, var(--tape-accent, #7c5cff));
+	outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.tape-chapters-fill,
+	.tape-chapters-fill[data-jump],
+	.tape-chapters-track {
+		transition: none;
+	}
+}

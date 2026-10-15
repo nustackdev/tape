@@ -8,6 +8,7 @@ export default defineConfig([
 		clean: true,
 		external: ["react"],
 		banner: { js: '"use client";' },
+		onSuccess: "cp src/tape.css dist/tape.css",
 	},
 	{
 		// Runs inside the replay iframe as a classic script, so everything is inlined.

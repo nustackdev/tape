@@ -11,7 +11,7 @@ Works for any UI driven by a websocket. Frames are opaque bytes, tape never read
 | package | what |
 | --- | --- |
 | `@nustackdev/tape` | the `tape` CLI: record, bundle, trim, info |
-| `@nustackdev/tape-player` | `<LiveScene>` (react) and the shim that runs inside the iframe |
+| `@nustackdev/tape-player` | `<LiveScene>` and the `Tape` parts (react), and the shim that runs inside the iframe |
 | `@nustackdev/tape-scene` | the scene format and its helpers |
 | `@nustackdev/tape-render` | the `tape-render` CLI: a scene to mp4 and gif, for READMEs and posts |
 
@@ -19,7 +19,7 @@ Works for any UI driven by a websocket. Frames are opaque bytes, tape never read
 
 ```bash
 npm i -D @nustackdev/tape          # the CLI
-npm i @nustackdev/tape-player      # <LiveScene>
+npm i @nustackdev/tape-player      # <LiveScene>, Tape
 npm i -D @nustackdev/tape-render   # mp4 and gif, needs ffmpeg
 ```
 
@@ -63,6 +63,59 @@ The cursor and the click ripple are yours to draw: `cursor` takes a node, drawn 
 ```tsx
 <LiveScene app={app} scene={scene} cursor={<MyCursor />} click={<MyClick />} clickMs={480} />
 ```
+
+## Play, with controls
+
+`Tape` is the same replay as parts, on a clock the page owns: play, pause, seek both ways, chapters. `Tape.Root` holds the take and renders nothing; the parts sit anywhere under it, in any layout.
+
+```tsx
+import { Tape } from "@nustackdev/tape-player";
+import "@nustackdev/tape-player/tape.css";
+
+<Tape.Root app={app} scene="/scenes/movies.json" label="The movies demo" chapters={chapters}>
+  <Tape.Frame aspect={16 / 10}>
+    <Tape.Scrubber />
+    <Tape.Caption />
+    <Tape.Chapters />
+  </Tape.Frame>
+</Tape.Root>
+```
+
+| part | what |
+| --- | --- |
+| `Tape.Root` | the take and its clock. `storage` lays keys over the take's localStorage (a change restarts it in them), `ready={false}` holds the load, eg until the theme is known |
+| `Tape.Frame` | the replay, scaled to fit, the recorded pointer and clicks over it. Loads near the viewport, plays only on screen. Its children are drawn over the replay |
+| `Tape.Scrubber` | inside the Frame: the frame becomes one control. Press anywhere and drag sideways through the take, mouse or touch; keys too (arrows, shift+arrows by chapter, Home, End, Space) |
+| `Tape.Caption` | the chapter playing, as a line: number, title, note. Pass a function as children to render it yourself |
+| `Tape.Chapters` | the take as a timeline cut into its chapters, one fill along it. Click a chapter to play from it |
+
+Chapters are config, not part of the recording, so one take can be told differently per page and edited without recording again:
+
+```ts
+const chapters = [
+  { t: 0, title: "Add a film", note: "Type a name, press Add." },
+  { t: 9000, title: "Mark it watched", note: "The count at the top follows." },
+];
+```
+
+`t` is ms of the take; `tape info` prints a scene's length and trim window. A part of your own reads the tape with `useTape` (a selector: it re-renders only when what it picks changes) and drives it with `useTapeApi`:
+
+```tsx
+const chapter = useTape((s) => s.chapter);
+const { seek, play, pause, chapter: jump } = useTapeApi();
+```
+
+The parts are unstyled but for what they need to work, and themed by CSS variables. Set them on the root: the scrubber floats over the page from the body.
+
+| variable | for |
+| --- | --- |
+| `--tape-accent` | pointer, clicks, scrubber fill |
+| `--tape-accent-text` | timeline fill, caption number |
+| `--tape-ink`, `--tape-ink-soft`, `--tape-ink-faint` | caption title, note, count |
+| `--tape-track` | timeline track |
+| `--tape-bg`, `--tape-shimmer` | the frame before the take shows, its loading sweep |
+| `--tape-ring`, `--tape-ring-width`, `--tape-ring-offset` | focus |
+| `--tape-font-mono`, `--tape-fs-title`, `--tape-fs-num` | type |
 
 ## Render
 
