@@ -1,0 +1,43 @@
+{
+	"name": "@nustackdev/tape-render",
+	"description": "Render a tape scene to video and GIF: the real app replayed in headless Chromium, cursor and clicks drawn your way.",
+	"version": "0.1.6",
+	"license": "Apache-2.0",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/nustackdev/tape.git",
+		"directory": "packages/render"
+	},
+	"homepage": "https://github.com/nustackdev/tape#readme",
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		}
+	},
+	"bin": {
+		"tape-render": "./dist/cli.js"
+	},
+	"files": [
+		"dist"
+	],
+	"scripts": {
+		"build": "tsup src/index.ts src/cli.ts --format esm --dts --clean --target node20",
+		"typecheck": "tsc --noEmit",
+		"test": "vitest run --passWithNoTests",
+		"prepack": "cp ../../LICENSE.md ."
+	},
+	"dependencies": {
+		"@nustackdev/tape-scene": "workspace:*",
+		"playwright": "~1.63.0"
+	},
+	"devDependencies": {
+		"@types/node": "^24.10.1"
+	},
+	"publishConfig": {
+		"access": "public"
+	}
+}

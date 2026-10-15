@@ -13,12 +13,14 @@ Works for any UI driven by a websocket. Frames are opaque bytes, tape never read
 | `@nustackdev/tape` | the `tape` CLI: record, bundle, trim, info |
 | `@nustackdev/tape-player` | `<LiveScene>` (react) and the shim that runs inside the iframe |
 | `@nustackdev/tape-scene` | the scene format and its helpers |
+| `@nustackdev/tape-render` | the `tape-render` CLI: a scene to mp4 and gif, for READMEs and posts |
 
 ## Install
 
 ```bash
 npm i -D @nustackdev/tape          # the CLI
 npm i @nustackdev/tape-player      # <LiveScene>
+npm i -D @nustackdev/tape-render   # mp4 and gif, needs ffmpeg
 ```
 
 ## Record
@@ -61,6 +63,25 @@ The cursor and the click ripple are yours to draw: `cursor` takes a node, drawn 
 ```tsx
 <LiveScene app={app} scene={scene} cursor={<MyCursor />} click={<MyClick />} clickMs={480} />
 ```
+
+## Render
+
+Where a page can't run the replay, a README or a post, render it to video:
+
+```bash
+tape-render hero.json --app public/scenes/app -o hero            # hero.mp4 and hero.gif
+tape-render hero.json --app public/scenes/app -o hero -f gif --gif-width 800 --theme light
+```
+
+Same replay as the player, in headless Chromium, screenshot frame by frame. Screenshots are slow at 2x, so the take runs in slow motion while it is captured, the clock and the page's CSS animations both, and every frame is stamped with the take time it shows. The encode holds each frame until the next one's time, so the output plays at the take's own pace whatever the machine managed. `--slow auto` picks the factor from a quick measure of the capture rate.
+
+The pointer is yours to style, as in the player: `--cursor` and `--click` take html files, `--css` styles them.
+
+- `.tape-cursor` sits with its top left on the pointer tip, inside a box marked `data-down="1"` while pressed
+- each click is drawn centred on it for `--click-ms`, with `--tape-click-p` going 0 to 1 over that time for css that wants it, besides plain keyframes
+- `--theme dark` sets the browser's color scheme and a `dark` class on the root, for css that differs by theme. `--storage nuspace.theme=dark` is how the app itself gets told
+
+Also `--start`/`--end` to cut, `--speed`, `--lead`/`--hold` to hold the first and last frame, `--scale`, `--fps`, `--crf`, `--gif-fps`, `--gif-width`, `--gif-colors`, `--gif-dither`. `tape-render --help` for all of it. From code: `capture()`, then `encodeMp4()` / `encodeGif()`.
 
 ## What replays
 
