@@ -1,7 +1,7 @@
 {
 	"name": "@nustackdev/tape-render",
 	"description": "Render a tape scene to video and GIF: the real app replayed in headless Chromium, cursor and clicks drawn your way.",
-	"version": "0.3.1",
+	"version": "0.3.2",
 	"license": "Apache-2.0",
 	"repository": {
 		"type": "git",
