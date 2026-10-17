@@ -149,8 +149,9 @@ export function Frame({
 			if (!f) return;
 			// Gone with focus in it, the page would have none: it goes back where it was.
 			const held = document.activeElement === f;
+			const at = { x: window.scrollX, y: window.scrollY };
 			f.remove();
-			if (held) e.restore?.();
+			if (held) e.restore?.(at);
 		};
 		return () => {
 			e.remove = null;
@@ -187,12 +188,9 @@ export function Frame({
 			},
 			{ capture: true, signal: ac.signal },
 		);
-		e.restore = () => {
-			if (
-				performance.now() - moved > 500 &&
-				(window.scrollX !== stood.x || window.scrollY !== stood.y)
-			) {
-				window.scrollTo({ left: stood.x, top: stood.y, behavior: "instant" });
+		e.restore = (at = stood) => {
+			if (performance.now() - moved > 500 && (window.scrollX !== at.x || window.scrollY !== at.y)) {
+				window.scrollTo({ left: at.x, top: at.y, behavior: "instant" });
 			}
 			if (last instanceof HTMLElement && last.isConnected) {
 				last.focus({ preventScroll: true });

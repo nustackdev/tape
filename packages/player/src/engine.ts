@@ -148,6 +148,11 @@ function sameOriginFor(force: "same-origin" | "opaque" | "auto"): boolean {
 /** How long the page's scroll is held after the take's editor says it will edit, ms. */
 const HOLD_MS = 100;
 
+/** Where the page is scrolled. */
+export type ScrollAt = { x: number; y: number };
+
+const scrollAt = (): ScrollAt => ({ x: window.scrollX, y: window.scrollY });
+
 export class Engine {
 	scene: Scene | null = null;
 	/** The pointer's path, for the drawn cursor. */
@@ -172,9 +177,11 @@ export class Engine {
 	isolation: "auto" | "same-origin" | "opaque" = "auto";
 	/**
 	 * Put the page's focus and scroll back where they were: a take pulled real
-	 * focus into its frame, or its page started to leave. Set by the Frame.
+	 * focus into its frame, or its page started to leave. The scroll goes back to
+	 * `at`, read as the trouble began; without it, to where the page stood last
+	 * frame (a focus taken may have scrolled it since). Set by the Frame.
 	 */
-	restore: (() => void) | null = null;
+	restore: ((at?: ScrollAt) => void) | null = null;
 	/** Take the iframe of take `id` out of the document now. Set by the Frame. */
 	remove: ((id: string) => void) | null = null;
 
@@ -378,8 +385,9 @@ export class Engine {
 		if (!take) return;
 		take.loads++;
 		if (take.loads > 1) {
+			const at = scrollAt();
 			this.failed(take, null, "its frame navigated away");
-			this.restore?.();
+			this.restore?.(at);
 		}
 	}
 
@@ -472,9 +480,11 @@ export class Engine {
 		} else if (m.type === "gone") {
 			// Its page is leaving: out of the document before the navigation commits, so it
 			// never loads and never adds to the tab's history; the page stays as it was.
+			// Its scroll is read now, not last frame: the visitor may have scrolled since.
+			const at = scrollAt();
 			this.failed(take, null, `its page unloaded (${m.why ?? "unknown"})`);
-			this.restore?.();
-			requestAnimationFrame(() => requestAnimationFrame(() => this.restore?.()));
+			this.restore?.(at);
+			requestAnimationFrame(() => requestAnimationFrame(() => this.restore?.(at)));
 		} else if (m.type === "focused") {
 			this.restore?.();
 		} else if (m.type === "origin") {
