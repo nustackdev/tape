@@ -1,7 +1,7 @@
 {
 	"name": "@nustackdev/tape-player",
 	"description": "Replay a tape scene: the real app in an iframe, its websocket fed from the recording, on a clock the page controls, with scrub, chapters and captions.",
-	"version": "0.2.0",
+	"version": "0.3.0",
 	"license": "Apache-2.0",
 	"repository": {
 		"type": "git",
