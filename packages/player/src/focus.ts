@@ -129,6 +129,110 @@ export function installFocus(): void {
 			},
 		});
 	}
+	// autofocus would focus for real, and scroll the page around the frame to it:
+	// the attribute goes as the element arrives, and the focus is pretended.
+	const autofocus = (el: Element) => {
+		el.removeAttribute("autofocus");
+		queueMicrotask(() => el.isConnected && setFocus(el, true));
+	};
+	// Set by script, it never reaches the element: the browser acts on it as it is set.
+	const later = (el: Element) => queueMicrotask(() => el.isConnected && setFocus(el, true));
+	for (const proto of [HTMLElement.prototype, SVGElement.prototype]) {
+		Object.defineProperty(proto, "autofocus", {
+			configurable: true,
+			get: () => false,
+			set(this: Element, on: boolean) {
+				if (on) later(this);
+			},
+		});
+	}
+	// Parsed from html: taken out of the markup first, the elements focused pretended.
+	const inner = Object.getOwnPropertyDescriptor(Element.prototype, "innerHTML");
+	const parsed = (html: string, put: (clean: string) => void, root: () => ParentNode) => {
+		if (!/autofocus/i.test(html) || !inner?.set) return put(html);
+		const t = document.createElement("template");
+		inner.set.call(t, html);
+		const marked = [...t.content.querySelectorAll("[autofocus]")];
+		for (const el of marked) el.setAttribute("data-tape-autofocus", "");
+		for (const el of marked) el.removeAttribute("autofocus");
+		put(t.innerHTML);
+		for (const el of root().querySelectorAll("[data-tape-autofocus]")) {
+			el.removeAttribute("data-tape-autofocus");
+			later(el);
+		}
+	};
+	if (inner?.set) {
+		const set = inner.set;
+		Object.defineProperty(Element.prototype, "innerHTML", {
+			...inner,
+			set(this: Element, html: string) {
+				parsed(
+					String(html),
+					(clean) => set.call(this, clean),
+					() => this,
+				);
+			},
+		});
+	}
+	const adjacent = Element.prototype.insertAdjacentHTML;
+	Element.prototype.insertAdjacentHTML = function (
+		this: Element,
+		where: InsertPosition,
+		html: string,
+	) {
+		parsed(
+			String(html),
+			(clean) => adjacent.call(this, where, clean),
+			() => this.parentNode ?? this,
+		);
+	};
+	const setAttribute = Element.prototype.setAttribute;
+	Element.prototype.setAttribute = function (this: Element, name: string, value: string) {
+		if (name.length === 9 && name.toLowerCase() === "autofocus") {
+			later(this);
+			return;
+		}
+		setAttribute.call(this, name, value);
+	};
+	new MutationObserver((records) => {
+		for (const r of records) {
+			if (r.type === "attributes" && r.target instanceof Element) {
+				if (r.target.hasAttribute("autofocus")) autofocus(r.target);
+				continue;
+			}
+			for (const n of r.addedNodes) {
+				if (!(n instanceof Element)) continue;
+				if (n.hasAttribute("autofocus")) autofocus(n);
+				for (const c of n.querySelectorAll("[autofocus]")) autofocus(c);
+			}
+		}
+	}).observe(document, {
+		subtree: true,
+		childList: true,
+		attributes: true,
+		attributeFilter: ["autofocus"],
+	});
+	// A modal dialog focuses inside itself for real (the host takes focus back); the
+	// replay's focus goes where the browser's would.
+	const showModal = HTMLDialogElement.prototype.showModal;
+	Object.defineProperty(HTMLDialogElement.prototype, "showModal", {
+		configurable: true,
+		writable: true,
+		value(this: HTMLDialogElement) {
+			// Inert while it opens: the dialog focusing steps skip an inert dialog.
+			const inert = this.inert;
+			this.inert = true;
+			try {
+				showModal.call(this);
+			} finally {
+				this.inert = inert;
+			}
+			const inside = this.querySelector(
+				"[autofocus], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), button:not([disabled]), a[href], [tabindex]",
+			);
+			setFocus(inside ?? this, true);
+		},
+	});
 	Object.defineProperty(Document.prototype, "activeElement", {
 		configurable: true,
 		get(this: Document) {

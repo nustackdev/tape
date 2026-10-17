@@ -1,6 +1,7 @@
 // The recorder. A proxy in front of a running app: every http request and
-// websocket passes through untouched, the page gets the inject script, and
-// what the server sends over its sockets is logged with a timestamp.
+// websocket passes through untouched, and the page gets the inject script,
+// which writes the take's log from inside the page (./inject.ts) and sends it
+// here over its own socket.
 //
 // A take starts when the browser requests a page, so a reload starts over.
 // Stopping writes the latest take.
@@ -10,13 +11,9 @@ import http from "node:http";
 import https from "node:https";
 import type { Duplex } from "node:stream";
 import {
-	type PointerKind,
-	type PointerSample,
+	type Entry,
 	SCENE_VERSION,
 	type Scene,
-	type SceneEvent,
-	type SceneFrame,
-	type SceneNav,
 	type SceneSocket,
 	type Viewport,
 } from "@nustackdev/tape-scene";
@@ -38,33 +35,34 @@ const TAIL_MS = 400;
 const LEAD_MS = 300;
 
 class Take {
-	readonly t0 = performance.now();
 	readonly recordedAt = new Date().toISOString();
 	url = "";
 	path = "/";
 	viewport: Viewport = { width: 1280, height: 800, dpr: 1 };
 	userAgent?: string;
 	seed?: number;
-	epoch?: number;
+	epoch = 0;
 	local: Record<string, string> = {};
 	resized = false;
 	sockets: SceneSocket[] = [];
-	frames: SceneFrame[] = [];
-	pointer: PointerSample[] = [];
-	nav: SceneNav[] = [];
-	events: SceneEvent[] = [];
+	log: Entry[] = [];
 	last = 0;
 
-	now(): number {
-		return Math.round((performance.now() - this.t0) * 10) / 10;
+	add(e: Entry) {
+		// One channel from one page: in order. Guard anyway, the format requires it.
+		const prev = this.log[this.log.length - 1];
+		if (prev && e.t < prev.t) e.t = prev.t;
+		this.log.push(e);
+		if (e.t > this.last) this.last = e.t;
 	}
 
-	mark(t: number): number {
-		if (t > this.last) this.last = t;
-		return t;
+	count(k: Entry["k"]) {
+		return this.log.reduce((n, e) => n + (e.k === k ? 1 : 0), 0);
 	}
 
-	toScene(title?: string): Scene {
+	toScene(title?: string): Scene | null {
+		if (this.seed === undefined) return null;
+		const firstMove = this.log.find((e) => e.k === "move");
 		return {
 			tape: SCENE_VERSION,
 			meta: {
@@ -73,19 +71,15 @@ class Take {
 				path: this.path,
 				viewport: this.viewport,
 				duration: Math.round(this.last + TAIL_MS),
-				...(this.pointer[0] && this.pointer[0][0] > LEAD_MS
-					? { start: Math.round(this.pointer[0][0] - LEAD_MS) }
-					: {}),
+				...(firstMove && firstMove.t > LEAD_MS ? { start: Math.round(firstMove.t - LEAD_MS) } : {}),
 				userAgent: this.userAgent,
-				...(this.seed !== undefined ? { seed: this.seed, epoch: this.epoch } : {}),
+				seed: this.seed,
+				epoch: this.epoch,
 				...(title ? { title } : {}),
 			},
 			storage: { local: this.local },
 			sockets: this.sockets,
-			frames: this.frames,
-			pointer: this.pointer,
-			nav: this.nav,
-			events: this.events,
+			log: this.log,
 		};
 	}
 }
@@ -108,8 +102,9 @@ export async function record(opts: RecordOptions): Promise<Recorder> {
 	const status = () => {
 		if (!take) return;
 		const s = (take.last / 1000).toFixed(1);
+		const input = take.log.length - take.count("msg") - take.count("move");
 		log(
-			`take ${takes}  ${s}s  frames ${take.frames.length}  pointer ${take.pointer.length}  nav ${take.nav.length}  input ${take.events.length}`,
+			`take ${takes}  ${s}s  frames ${take.count("msg")}  pointer ${take.count("move")}  nav ${take.count("nav")}  input ${input}`,
 		);
 	};
 	const ticker = setInterval(status, 1000);
@@ -180,7 +175,7 @@ export async function record(opts: RecordOptions): Promise<Recorder> {
 		wss.handleUpgrade(req, socket, head, (ws) => pipe(ws, path, req.headers));
 	});
 
-	/** The inject script's channel: pointer, navigation, viewport. */
+	/** The inject script's channel: the take's log, in the page's order. */
 	function events(ws: WebSocket) {
 		const mine = take;
 		ws.on("message", (raw) => {
@@ -191,7 +186,6 @@ export async function record(opts: RecordOptions): Promise<Recorder> {
 			} catch {
 				return;
 			}
-			const t = mine.now();
 			switch (m.type) {
 				case "hello":
 					mine.url = String(m.url);
@@ -199,23 +193,16 @@ export async function record(opts: RecordOptions): Promise<Recorder> {
 					mine.viewport = m.viewport as Viewport;
 					mine.userAgent = String(m.userAgent);
 					mine.local = (m.local as Record<string, string>) ?? {};
-					if (typeof m.seed === "number" && typeof m.now === "number") {
+					if (typeof m.seed === "number" && typeof m.epoch === "number") {
 						mine.seed = m.seed;
-						mine.epoch = Math.round(m.now - t);
+						mine.epoch = Math.round(m.epoch);
 					}
 					break;
-				case "p":
-					mine.pointer.push([mine.mark(t), Number(m.x), Number(m.y), Number(m.k) as PointerKind]);
-					break;
-				case "nav":
-					mine.nav.push({
-						t: mine.mark(t),
-						path: String(m.path),
-						mode: m.mode as SceneNav["mode"],
-					});
+				case "sock":
+					mine.sockets[Number(m.s)] = { url: String(m.url) };
 					break;
 				case "e":
-					mine.events.push({ ...(m.e as SceneEvent), t: mine.mark(t) });
+					mine.add(m.e as Entry);
 					break;
 				case "resize":
 					if (!mine.resized) log("viewport changed mid take, the scene keeps the size at load");
@@ -225,14 +212,8 @@ export async function record(opts: RecordOptions): Promise<Recorder> {
 		});
 	}
 
-	/** An app socket: piped both ways, server messages logged. */
+	/** An app socket: piped both ways, untouched. The page logs what it receives. */
 	function pipe(down: WebSocket, path: string, reqHeaders: http.IncomingHttpHeaders) {
-		const mine = take;
-		let index = -1;
-		if (mine) {
-			index = mine.sockets.length;
-			mine.sockets.push({ url: path, open: mine.mark(mine.now()) });
-		}
 		const protocols = reqHeaders["sec-websocket-protocol"]
 			?.split(",")
 			.map((s) => s.trim())
@@ -254,48 +235,20 @@ export async function record(opts: RecordOptions): Promise<Recorder> {
 			else pending.push([data, binary]);
 		});
 		up.on("message", (data, binary) => {
-			if (mine && mine === take && index >= 0) {
-				const buf = Array.isArray(data)
-					? Buffer.concat(data)
-					: Buffer.isBuffer(data)
-						? data
-						: Buffer.from(data);
-				mine.frames.push(
-					binary
-						? { t: mine.mark(mine.now()), s: index, d: buf.toString("base64") }
-						: { t: mine.mark(mine.now()), s: index, d: buf.toString("utf8"), x: 1 },
-				);
-			}
 			if (down.readyState === WebSocket.OPEN) down.send(data, { binary });
 		});
-
-		// The browser leaving is the end of the page, not something the app did. Not logged.
-		let left = false;
-		const ended = (code: number) => {
-			if (mine && index >= 0 && !left) {
-				const s = mine.sockets[index];
-				if (s && s.close === undefined) {
-					s.close = mine.mark(mine.now());
-					s.code = code;
-				}
-			}
-		};
 		up.on("close", (code, reason) => {
-			ended(code);
 			// An abnormal upstream close stays abnormal downstream, so the app reconnects as it would.
 			if (down.readyState <= WebSocket.OPEN) down.close(sendable(code, 1012), reason);
 		});
 		down.on("close", (code, reason) => {
-			left = true;
 			if (up.readyState <= WebSocket.OPEN) up.close(sendable(code, 1000), reason);
 		});
 		up.on("error", (err) => {
 			log(`upstream socket ${path}: ${err.message}`);
-			ended(1006);
 			if (down.readyState <= WebSocket.OPEN) down.close(1011);
 		});
 		down.on("error", () => {
-			left = true;
 			up.terminate();
 		});
 	}
@@ -311,6 +264,7 @@ export async function record(opts: RecordOptions): Promise<Recorder> {
 			const current = take as Take | null;
 			if (!current || current.last === 0) return null;
 			const scene = current.toScene(opts.title);
+			if (!scene) return null;
 			writeFileSync(opts.out, JSON.stringify(scene));
 			return scene;
 		},

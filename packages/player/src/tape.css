@@ -10,6 +10,9 @@
 	width: 100%;
 	overflow: hidden;
 	background: var(--tape-bg, #f4f4f5);
+	/* Nothing in or over the replay is the visitor's to select. */
+	user-select: none;
+	-webkit-user-select: none;
 }
 
 .tape-stage {
@@ -23,14 +26,20 @@
 .tape-take {
 	position: absolute;
 	inset: 0;
+	pointer-events: none;
+	transition-property: opacity;
+	transition-timing-function: ease;
+}
+
+.tape-take-frame {
+	position: absolute;
+	inset: 0;
 	width: 100%;
 	height: 100%;
 	border: 0;
 	display: block;
 	pointer-events: none;
 	color-scheme: normal;
-	transition-property: opacity;
-	transition-timing-function: ease;
 }
 
 .tape-pointer {
@@ -84,7 +93,10 @@
 	width: 0;
 	height: 0;
 }
-.tape-click::after {
+.tape-click-custom::after {
+	content: none;
+}
+.tape-click:not(.tape-click-custom)::after {
 	content: "";
 	position: absolute;
 	left: -20px;
@@ -111,6 +123,8 @@
 	position: absolute;
 	inset: 0;
 	z-index: 4;
+	user-select: none;
+	-webkit-user-select: none;
 }
 
 .tape-loading {
@@ -136,7 +150,10 @@
 	.tape-loading {
 		animation: none;
 	}
-	.tape-click::after {
+	.tape-click-custom::after {
+		content: none;
+	}
+	.tape-click:not(.tape-click-custom)::after {
 		animation-duration: 1ms;
 	}
 }
@@ -387,6 +404,8 @@
 
 .tape-caption {
 	display: grid;
+	user-select: none;
+	-webkit-user-select: none;
 }
 
 /* Every line takes the same cell, so a swap doesn't shift what is under it. */

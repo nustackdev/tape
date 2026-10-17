@@ -60,7 +60,7 @@ export function Chapters({ className }: ChaptersProps) {
 		const off = store.onFrame(() => {
 			const el = fill.current;
 			if (!el) return;
-			const k = Math.min(1, Math.max(0, (store.engine.t - a) / Math.max(1, b - a)));
+			const k = Math.min(1, Math.max(0, (store.engine.shown - a) / Math.max(1, b - a)));
 			if (k === last) return;
 			if (last >= 0 && Math.abs(k - last) > JUMP) {
 				el.dataset.jump = "";

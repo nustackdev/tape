@@ -68,8 +68,8 @@ export function scrollIntoDoc(
 	}
 }
 
-export function installScroll(): void {
-	holdPageOnEdit();
+export function installScroll(onEdit: () => void): void {
+	noteEdits(onEdit);
 	Object.defineProperty(Element.prototype, "scrollIntoView", {
 		configurable: true,
 		writable: true,
@@ -91,73 +91,17 @@ export function installScroll(): void {
 /**
  * A backstop for the edits still left to the browser's editor (./edit.ts does
  * the common ones by hand). Firefox scrolls the caret into view after every
- * edit, even in an unfocused frame, and carries it up to the page whatever
- * the frame's origin or the page's css. So each execCommand notes where the
- * page stands and puts it back in the page's scroll events for the next two
- * frames. Late by a frame in a real window, so a jolt rather than a jump,
- * which is why typing doesn't come this way. A viewer scrolling right then
- * (wheel, touch, keys, a pointer held down) wins. A page the replay can't
- * reach (cross origin) is left alone.
+ * edit, even in an unfocused frame of another origin, and carries it up to the
+ * page around it. The frame can't reach that page, so `onEdit` tells the host
+ * before each, and the host holds its own scroll still (see the engine).
  */
-function holdPageOnEdit(): void {
-	let page: Window;
-	try {
-		if (window.parent === window) return;
-		void window.parent.scrollY;
-		page = window.parent;
-	} catch {
-		return;
-	}
-	let held: { x: number; y: number } | null = null;
-	let viewer = false;
-	let down = false;
-	const mark = () => {
-		viewer = true;
-	};
-	for (const type of ["wheel", "touchmove", "keydown"]) {
-		page.addEventListener(type, mark, { capture: true, passive: true });
-	}
-	page.addEventListener(
-		"pointerdown",
-		() => {
-			down = true;
-			viewer = true;
-		},
-		{ capture: true, passive: true },
-	);
-	page.addEventListener(
-		"pointerup",
-		() => {
-			down = false;
-		},
-		{ capture: true, passive: true },
-	);
-	page.addEventListener(
-		"scroll",
-		() => {
-			if (!held || viewer || down) return;
-			if (page.scrollX !== held.x || page.scrollY !== held.y) {
-				page.scrollTo({ left: held.x, top: held.y, behavior: "instant" });
-			}
-		},
-		{ capture: true, passive: true },
-	);
-	const hold = () => {
-		if (held) return;
-		held = { x: page.scrollX, y: page.scrollY };
-		viewer = false;
-		page.requestAnimationFrame(() =>
-			page.requestAnimationFrame(() => {
-				held = null;
-			}),
-		);
-	};
+function noteEdits(onEdit: () => void): void {
 	const exec = Document.prototype.execCommand;
 	Document.prototype.execCommand = function (
 		this: Document,
 		...args: Parameters<Document["execCommand"]>
 	) {
-		hold();
+		onEdit();
 		return exec.apply(this, args);
 	};
 }

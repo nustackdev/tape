@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+	<head><script src="/app/tape-shim.js"></script>
+		<meta charset="utf-8" />
+		<style>
+			body { margin: 0; font: 16px sans-serif; }
+			#ask { position: absolute; left: 0; top: 0; width: 100px; height: 40px; }
+			#ask:hover { outline: 3px solid red; }
+			#go { position: absolute; left: 0; top: 50px; }
+			#f { position: absolute; left: 0; top: 100px; }
+			#ed { position: absolute; left: 0; top: 150px; width: 200px; }
+			#out { position: absolute; left: 0; top: 200px; }
+			#far { position: absolute; left: 0; top: 2000px; }
+		</style>
+		<script type="text/x-tape-module" src="/app/app.js"></script>
+	</head>
+	<body><button id="ask" type="button">Ask</button><a id="go" href="/two">Go</a><input id="f" placeholder="name"><div id="ed" contenteditable="true">some text</div><p id="out"></p><dialog id="dlg"><input id="in-dlg"></dialog><p id="far">far below</p></body>
+</html>

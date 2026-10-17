@@ -11,7 +11,7 @@ import {
 	useSyncExternalStore,
 } from "react";
 import { type Chapter, chapterAt, progressAt } from "./chapter";
-import { Engine, loadScene } from "./engine";
+import { Engine, insideTake, loadScene } from "./engine";
 
 /** What the parts of a tape read: where it is, what plays, what is shown. */
 export interface TapeState {
@@ -27,7 +27,7 @@ export interface TapeState {
 	/** The playable part of the take, ms, once loaded. */
 	range: [number, number] | null;
 	playing: boolean;
-	/** The clock, ms of the take. Moves every frame. */
+	/** The time on screen, ms of the take: how far the shown take has applied. Moves every frame. */
 	time: number;
 	/** The chapter playing, -1 with none. */
 	chapter: number;
@@ -44,7 +44,7 @@ export interface TapeApi {
 	/** Play; at the end, from the top unless `rewind` is false. */
 	play(opts?: { rewind?: boolean }): void;
 	pause(): void;
-	/** The clock now, without subscribing to it. */
+	/** The clock now, where the take is headed, without subscribing to it. */
 	time(): number;
 	readonly playing: boolean;
 	/** Jump to chapter `i` and play. */
@@ -112,7 +112,7 @@ export class TapeStore {
 		for (const fn of this.subs) fn();
 	}
 
-	/** Every frame the tape is loaded: what is on screen, ms, and the frame's length. */
+	/** Every frame the tape is loaded: the time on screen, ms, and the frame's length. */
 	onFrame(fn: (shown: number, dt: number) => void) {
 		this.frames.add(fn);
 		return () => {
@@ -131,12 +131,13 @@ export class TapeStore {
 		e.frame(dt);
 		if (!e.scene) return;
 		const { chapters, range } = this.state;
+		const now = e.shown;
 		this.set({
-			time: e.t,
-			chapter: chapterAt(chapters, e.t),
-			progress: range ? progressAt(chapters, e.t, range[0], range[1]) : 0,
+			time: now,
+			chapter: chapterAt(chapters, now),
+			progress: range ? progressAt(chapters, now, range[0], range[1]) : 0,
 		});
-		for (const fn of this.frames) fn(e.shown, dt);
+		for (const fn of this.frames) fn(now, dt);
 	}
 }
 
@@ -174,8 +175,8 @@ function prefersReducedMotion() {
 }
 
 export interface RootProps {
-	/** Url of the scene.json. */
-	scene: string;
+	/** Url of the scene.json, or the scene itself. */
+	scene: string | Scene;
 	/** Url of the app build it replays in, with the tape shim in it. */
 	app: string;
 	/** What the take shows, for screen readers. */
@@ -191,6 +192,21 @@ export interface RootProps {
 	loop?: boolean;
 	/** Pause at the end before looping, ms. */
 	hold?: number;
+	/** Playback speed. */
+	rate?: number;
+	/** Replay recorded input into the app too, so local UI plays: menus, typing, hover. Default true. */
+	input?: boolean;
+	/** Load as soon as mounted, not once near the viewport. */
+	eager?: boolean;
+	/** Called once, when the first take is on screen. */
+	onReady?: () => void;
+	/**
+	 * How takes are isolated. "auto" (default): same origin where the browser has
+	 * the Navigation API, which then cancels every navigation a take starts; an
+	 * opaque origin elsewhere, which needs the bundle served with
+	 * `Access-Control-Allow-Origin: *`. See KERNEL.md, Isolation.
+	 */
+	isolation?: "auto" | "same-origin" | "opaque";
 	children?: ReactNode;
 }
 
@@ -212,6 +228,11 @@ export function Root({
 	autoplay = true,
 	loop = true,
 	hold = 1800,
+	rate = 1,
+	input = true,
+	eager = false,
+	onReady,
+	isolation = "auto",
 	children,
 }: RootProps) {
 	const [store] = useState(() => {
@@ -232,6 +253,37 @@ export function Root({
 		store.set({ app, label, chapters });
 	}, [store, app, label, chapters]);
 
+	useEffect(() => {
+		e.rate = rate;
+		e.loop = loop;
+		e.hold = hold;
+		// Applies to takes started from here on.
+		e.input = input;
+	}, [e, rate, loop, hold, input]);
+
+	useEffect(() => {
+		if (eager) store.set({ near: true });
+	}, [store, eager]);
+
+	useEffect(() => {
+		e.isolation = isolation;
+	}, [e, isolation]);
+
+	const front = useSyncExternalStore(
+		store.subscribe,
+		() => store.state.takes.front,
+		() => null,
+	);
+	const readyFn = useRef(onReady);
+	readyFn.current = onReady;
+	const announced = useRef(false);
+	useEffect(() => {
+		if (front && !announced.current) {
+			announced.current = true;
+			readyFn.current?.();
+		}
+	}, [front]);
+
 	// New takes boot in it; a change after the first restarts the take in it.
 	const key = JSON.stringify(storage);
 	const lastKey = useRef(key);
@@ -247,7 +299,8 @@ export function Root({
 		() => false,
 	);
 	useEffect(() => {
-		if (!near || !ready) return;
+		// The site loaded into a take's own frame: nothing plays in there.
+		if (!near || !ready || insideTake()) return;
 		let dead = false;
 		loadScene(src).then(
 			(scene) => {

@@ -103,7 +103,14 @@ function serve(app: string, base: string, harness: string, scene: string): Promi
 			res.writeHead(404).end();
 			return;
 		}
-		res.writeHead(200, { "content-type": type, "cache-control": "no-store" }).end(body);
+		// The take's frame is an opaque origin: its module scripts, css and fonts are cross origin.
+		res
+			.writeHead(200, {
+				"content-type": type,
+				"cache-control": "no-store",
+				"access-control-allow-origin": "*",
+			})
+			.end(body);
 	});
 	return new Promise((ok) => server.listen(0, "127.0.0.1", () => ok(server)));
 }
@@ -159,9 +166,16 @@ export async function capture(opts: CaptureOptions): Promise<FrameIndex> {
 			`take ${(win.start / 1000).toFixed(1)}s to ${(win.end / 1000).toFixed(1)}s, ${vp.width}x${vp.height} @${scale}x`,
 		);
 
-		await page.waitForFunction(() => (window as unknown as TapeWindow).__tape.state.painted, null, {
-			timeout: 30000,
-		});
+		await page.waitForFunction(
+			() => {
+				const s = (window as unknown as TapeWindow).__tape.state;
+				return s.painted || s.failed !== null;
+			},
+			null,
+			{ timeout: 60000 },
+		);
+		const bad = await page.evaluate(() => (window as unknown as TapeWindow).__tape.state.failed);
+		if (bad) throw new Error(`tape: the take failed: ${bad}`);
 		await page.evaluate(() => (window as unknown as TapeWindow).__tape.quiet(400, 6000));
 
 		// clip.scale is what gives true device pixels: without it a shot caps at css size.
@@ -192,13 +206,19 @@ export async function capture(opts: CaptureOptions): Promise<FrameIndex> {
 		await cdp.send("Animation.setPlaybackRate", { playbackRate: 1 / slow });
 
 		const frames: FrameStamp[] = [];
-		const wall0 = await page.evaluate((f) => (window as unknown as TapeWindow).__tape.run(f), slow);
+		await page.evaluate((f) => (window as unknown as TapeWindow).__tape.run(f), slow);
 		const span = win.end - win.start;
 		let n = 0;
 		let lastLog = 0;
 		for (;;) {
-			// Stamped at the request: what is on screen is what the clock showed as the shot was taken.
-			const t = Math.min(win.end, win.start + (Date.now() - wall0) / slow);
+			// Stamped with what the take had applied as the shot was taken: never the clock,
+			// which may run ahead of a busy app.
+			const s = await page.evaluate(() => {
+				const st = (window as unknown as TapeWindow).__tape.state;
+				return { pos: st.pos, failed: st.failed };
+			});
+			if (s.failed) throw new Error(`tape: the take failed: ${s.failed}`);
+			const t = Math.min(win.end, Math.max(win.start, s.pos));
 			const data = await shot();
 			const file = `${String(n++).padStart(6, "0")}.jpg`;
 			writeFileSync(join(opts.dir, file), Buffer.from(data, "base64"));
@@ -232,7 +252,7 @@ export async function capture(opts: CaptureOptions): Promise<FrameIndex> {
 
 interface TapeWindow {
 	__tape: {
-		state: { painted: boolean };
+		state: { painted: boolean; failed: string | null; pos: number };
 		load(): Promise<{ start: number; end: number }>;
 		quiet(quietMs: number, maxMs: number): Promise<void>;
 		run(slow: number): number;

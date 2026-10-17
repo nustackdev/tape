@@ -69,7 +69,10 @@ async function main(argv: string[]) {
 			await rec.close();
 			if (!scene) fail("nothing recorded, open the page first");
 			const s = (scene.meta.duration / 1000).toFixed(1);
-			process.stderr.write(`saved ${values.out}: ${s}s, ${scene.frames.length} frames\n`);
+			const frames = scene.log.filter((e) => e.k === "msg").length;
+			process.stderr.write(
+				`saved ${values.out}: ${s}s, ${frames} frames, ${scene.log.length} entries\n`,
+			);
 			process.exit(0);
 		};
 		process.once("SIGINT", stop);
@@ -130,7 +133,12 @@ async function main(argv: string[]) {
 		const raw = readFileSync(file, "utf8");
 		const scene = parseScene(raw);
 		const [a, b] = playWindow(scene);
-		const bytes = scene.frames.reduce((n, f) => n + (f.x ? f.d.length : (f.d.length * 3) / 4), 0);
+		const count = (k: string) => scene.log.filter((e) => e.k === k).length;
+		const bytes = scene.log.reduce(
+			(n, e) => n + (e.k === "msg" ? (e.x ? e.d.length : (e.d.length * 3) / 4) : 0),
+			0,
+		);
+		const navs = scene.log.flatMap((e) => (e.k === "nav" ? [e.path] : []));
 		const { width, height, dpr } = scene.meta.viewport;
 		const lines = [
 			`${file}  ${kb(raw.length)}`,
@@ -138,10 +146,11 @@ async function main(argv: string[]) {
 			`viewport  ${width}x${height} @${dpr}x`,
 			`length    ${(scene.meta.duration / 1000).toFixed(2)}s, plays ${(a / 1000).toFixed(2)}s to ${(b / 1000).toFixed(2)}s`,
 			`sockets   ${scene.sockets.map((s) => s.url).join(", ") || "none"}`,
-			`frames    ${scene.frames.length}, ${kb(bytes)} payload`,
-			`pointer   ${scene.pointer.length} samples, ${scene.pointer.filter((p) => p[3] === 1).length} clicks`,
-			`nav       ${scene.nav.map((n) => n.path).join(" > ") || "none"}`,
-			`input     ${scene.events?.length ?? 0} events, ${scene.events?.filter((e) => e.k === "keydown").length ?? 0} keys`,
+			`frames    ${count("msg")}, ${kb(bytes)} payload`,
+			`pointer   ${count("move")} moves, ${count("click")} clicks`,
+			`keys      ${count("keydown")}`,
+			`nav       ${navs.join(" > ") || "none"}`,
+			`log       ${scene.log.length} entries`,
 		];
 		process.stdout.write(`${lines.join("\n")}\n`);
 		return;

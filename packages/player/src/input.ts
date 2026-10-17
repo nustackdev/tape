@@ -6,8 +6,12 @@
 // the ones that matter are done here by hand: focus on mousedown, text on
 // keydown, caret placement, scroll positions. Pointer capture is patched,
 // since a synthetic pointer can't be captured.
+//
+// Every entry comes in with its target already checked by the executor
+// (./executor.ts): a button event goes to the element it recorded, a key to
+// the focused element it recorded. Default actions act on that target only.
 
-import type { ElementPath, SceneEvent } from "@nustackdev/tape-scene";
+import type { ElementPath, Entry, NodePath } from "@nustackdev/tape-scene";
 import { type EditKind, editText, execNative } from "./edit";
 import { activeElement, focusTarget, setFocus, setModality } from "./focus";
 import { setHover } from "./pseudo";
@@ -18,21 +22,25 @@ function mods(m: number) {
 	return { shiftKey: !!(m & 1), ctrlKey: !!(m & 2), altKey: !!(m & 4), metaKey: !!(m & 8) };
 }
 
-export function resolvePath(doc: Document, p: ElementPath): Element | null {
-	if (p === "") return doc.scrollingElement;
-	let el: Element | null = doc.documentElement;
-	for (const i of p.split("/")) {
-		el = el?.children[Number(i)] ?? null;
-		if (!el) return null;
-	}
-	return el;
+export interface Resolver {
+	resolve(p: ElementPath): Element | null;
+	resolveNode(p: NodePath): Node | null;
 }
 
-function isField(el: Element | null): el is HTMLInputElement | HTMLTextAreaElement {
+export function isField(el: Element | null): el is HTMLInputElement | HTMLTextAreaElement {
 	return (
 		el instanceof HTMLTextAreaElement ||
 		(el instanceof HTMLInputElement && el.selectionStart !== null)
 	);
+}
+
+function inEditable(n: Node): boolean {
+	const el = n instanceof Element ? n : n.parentElement;
+	return el instanceof HTMLElement && el.isContentEditable;
+}
+
+function nodeLength(n: Node): number {
+	return n instanceof CharacterData ? n.length : n.childNodes.length;
 }
 
 /** Set a field's value the way typing does, so frameworks tracking it see a change. */
@@ -73,11 +81,13 @@ export class InputPlayer {
 
 	/**
 	 * @param chars the take recorded keypress, the character step. Without it
-	 * (older takes) text goes in on keydown.
+	 * text goes in on keydown.
+	 * @param at resolves the paths entries name.
 	 */
 	constructor(
 		private doc: Document,
 		private chars: boolean,
+		private at: Resolver,
 	) {
 		const self = this;
 		const proto = Element.prototype;
@@ -162,17 +172,33 @@ export class InputPlayer {
 		}
 	}
 
-	play(e: SceneEvent) {
+	/** The element a scroll entry names: "" is the page. */
+	scroller(p: ElementPath): Element | null {
+		return p === "" ? this.doc.scrollingElement : this.at.resolve(p);
+	}
+
+	/**
+	 * Apply input entry `e`. `target`, resolved by the shim: for a button event
+	 * the element it recorded, checked by the executor (null when its check was
+	 * waived and it is gone); for focus, value and sel the element they act on.
+	 */
+	play(e: Entry, target: Element | null = null) {
 		const doc = this.doc;
 		switch (e.k) {
+			case "move":
+				this.move(e.x, e.y);
+				return;
+			case "out":
+				this.leave();
+				return;
 			case "down":
 			case "up":
 			case "click":
 			case "dblclick":
 			case "contextmenu": {
 				this.move(e.x, e.y);
-				const hit = doc.elementFromPoint(e.x, e.y);
-				const at = (e.k === "up" && this.captured?.isConnected ? this.captured : hit) ?? doc.body;
+				const at = e.k === "up" && this.captured?.isConnected ? this.captured : target;
+				if (!at) return;
 				const extra = { button: e.b, ...mods(e.m) };
 				if (e.k === "down") {
 					setModality(false);
@@ -183,7 +209,7 @@ export class InputPlayer {
 						at.dispatchEvent(new MouseEvent("mousedown", this.pointerInit(e.x, e.y, extra)));
 					// A mousedown nobody prevented moves focus and puts the caret where it landed.
 					if (down) {
-						const f = focusTarget(hit);
+						const f = focusTarget(at);
 						setFocus(f);
 						if (f instanceof HTMLElement && f.isContentEditable) caretAt(doc, e.x, e.y);
 					}
@@ -196,7 +222,7 @@ export class InputPlayer {
 				} else if (e.k === "contextmenu") {
 					at.dispatchEvent(new MouseEvent("contextmenu", this.pointerInit(e.x, e.y, extra)));
 				} else {
-					// A synthetic click still activates links, buttons, checkboxes and labels.
+					// A synthetic click still activates buttons, checkboxes and labels.
 					const detail = e.k === "dblclick" ? 2 : 1;
 					at.dispatchEvent(new MouseEvent(e.k, this.pointerInit(e.x, e.y, { ...extra, detail })));
 				}
@@ -223,26 +249,26 @@ export class InputPlayer {
 					composed: true,
 					...mods(e.m),
 				};
-				const go = target.dispatchEvent(new KeyboardEvent(e.k, init));
-				if (!go) return;
+				if (!target.dispatchEvent(new KeyboardEvent(e.k, init))) return;
+				// The default action goes where focus is now: a keydown handler may have moved it.
+				const focused = activeElement();
 				if (e.m & (2 | 4 | 8)) {
 					// Of the shortcuts, only select all edits what the replay shows; copy and paste reach nothing.
-					if (e.k === "keydown" && !(e.m & 4) && e.key.toLowerCase() === "a") {
-						this.selectAll(activeElement() ?? doc.body);
+					if (e.k === "keydown" && !(e.m & 4) && e.key.toLowerCase() === "a" && focused) {
+						this.selectAll(focused);
 					}
 					return;
 				}
-				// The text goes where focus is now: a keydown handler may have moved it, and in a
-				// browser the key then types into the new place. Text goes in on the character
-				// step, deleting on keydown. Takes from before keypress was recorded do it all on keydown.
+				// Text goes in on the character step, deleting on keydown. Without keypress in
+				// the take, it all goes in on keydown.
 				const deletes = e.key === "Backspace" || e.key === "Delete";
-				if (e.k === "keypress" || (e.k === "keydown" && (deletes || !this.chars))) {
-					this.edit(activeElement() ?? doc.body, e.key);
+				if (focused && (e.k === "keypress" || (e.k === "keydown" && (deletes || !this.chars)))) {
+					this.edit(focused, e.key);
 				}
 				return;
 			}
 			case "scroll": {
-				const el = resolvePath(doc, e.p);
+				const el = this.scroller(e.p);
 				if (el) {
 					el.scrollLeft = e.x;
 					el.scrollTop = e.y;
@@ -250,28 +276,67 @@ export class InputPlayer {
 				return;
 			}
 			case "value": {
-				const el = resolvePath(doc, e.p);
-				if (isField(el) && el.value !== e.v) setValue(el, e.v, null);
+				if (isField(target) && target.value !== e.v) setValue(target, e.v, null);
+				return;
+			}
+			case "focus": {
+				if (e.h === null) setFocus(null);
+				else if (target) setFocus(target);
+				return;
+			}
+			case "sel": {
+				if (!isField(target)) return;
+				const n = target.value.length;
+				target.setSelectionRange(Math.min(e.a, n), Math.min(e.b, n));
+				return;
+			}
+			case "range": {
+				const a = this.at.resolveNode(e.a[0]);
+				const b = this.at.resolveNode(e.b[0]);
+				const sel = doc.getSelection();
+				const host = activeElement();
+				if (!a || !b || !sel || !host?.contains(a) || !host.contains(b)) return;
+				if (!inEditable(a) || !inEditable(b)) return;
+				if (e.a[1] > nodeLength(a) || e.b[1] > nodeLength(b)) return;
+				sel.setBaseAndExtent(a, e.a[1], b, e.b[1]);
 				return;
 			}
 		}
 	}
 
-	/** Cmd/Ctrl+A nobody handled: the field's text, the editing host's content, or the page. */
+	/** The pointer left the page: out of everything it was over. */
+	private leave() {
+		const init = this.pointerInit(this.x, this.y, { relatedTarget: null });
+		if (this.under?.isConnected) {
+			this.under.dispatchEvent(new PointerEvent("pointerout", init));
+			this.under.dispatchEvent(new MouseEvent("mouseout", init));
+		}
+		for (const e of this.hovered) {
+			if (!e.isConnected) continue;
+			e.dispatchEvent(new PointerEvent("pointerleave", { ...init, bubbles: false }));
+			e.dispatchEvent(new MouseEvent("mouseleave", { ...init, bubbles: false }));
+		}
+		this.under = null;
+		this.hovered = setHover(this.hovered, null);
+		this.x = -1;
+		this.y = -1;
+	}
+
+	/**
+	 * Cmd/Ctrl+A nobody handled, on the focused element: a field's text, or an
+	 * editing host's content. Nothing else: the replay never selects the page.
+	 */
 	private selectAll(target: Element) {
 		if (isField(target)) {
 			target.select();
 			return;
 		}
+		if (!(target instanceof HTMLElement) || !target.isContentEditable) return;
 		const sel = this.doc.getSelection();
 		if (!sel) return;
-		if (target instanceof HTMLElement && target.isContentEditable) {
-			let host = target;
-			while (host.parentElement?.isContentEditable) host = host.parentElement;
-			sel.selectAllChildren(host);
-			return;
-		}
-		sel.selectAllChildren(this.doc.body);
+		let host = target;
+		while (host.parentElement?.isContentEditable) host = host.parentElement;
+		sel.selectAllChildren(host);
 	}
 
 	/** What the browser does for a key nobody handled. */

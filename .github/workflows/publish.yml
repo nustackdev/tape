@@ -1,4 +1,4 @@
-# Publishes the three packages to npm on a tag push like `v0.1.0`. They ship
+# Publishes the packages to npm on a tag push like `v0.1.0`. They ship
 # in lockstep: @nustackdev/tape-scene, @nustackdev/tape-player, @nustackdev/tape.
 # Manual "Run workflow" dispatch builds and checks but does NOT publish.
 #
@@ -8,7 +8,7 @@
 # identity is what npm checks. Provenance comes with it.
 #
 # Release flow:
-#   1. Bump `version` in all three packages/*/package.json to X.Y.Z.
+#   1. Bump `version` in every packages/*/package.json to X.Y.Z.
 #   2. Commit and push to main.
 #   3. `git tag vX.Y.Z && git push origin vX.Y.Z`.
 name: Publish
@@ -29,7 +29,7 @@ concurrency:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -46,6 +46,10 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+      # The player's e2e tests run the kernel in all three engines.
+      - name: Browsers
+        run: pnpm --filter @nustackdev/tape-player exec playwright install --with-deps chromium firefox webkit
 
       - name: Check
         run: pnpm typecheck && pnpm test && pnpm check

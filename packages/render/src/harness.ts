@@ -1,7 +1,9 @@
 // The page a render runs in: the app's replay in an iframe at the recorded
 // viewport, the cursor and clicks drawn over it, and a clock the renderer
-// starts. Plain DOM, no framework: it only has to tick the shim and place two
-// layers.
+// starts. Plain DOM, no framework: it only has to drive the shim and place two
+// layers. The same protocol as the player's engine (see the player's
+// KERNEL.md): the clock says how far the take may go, the shim says how far it
+// got, and everything drawn and stamped is from the latter.
 //
 // The clock runs on wall time divided by `slow`, so a machine that captures
 // few frames a second still gets a smooth take: the renderer slows the page's
@@ -9,6 +11,10 @@
 
 /** The url hash key the take id travels in, as the player shim reads it. */
 const TAKE_KEY = "tape-take";
+/** The iframe's sandbox, as the player has it: an opaque origin. The server sends CORS headers for it. */
+const SANDBOX = "allow-scripts allow-forms";
+/** The clock runs at most this far ahead of what the take applied, ms of the take. */
+const LEAD_MS = 250;
 
 export interface HarnessConfig {
 	/** Url of the bundle's index.html. */
@@ -66,7 +72,8 @@ const SCRIPT = `
 	const clicks = document.getElementById("clicks");
 	cursor.innerHTML = cfg.cursor;
 
-	const state = { scene: null, start: 0, end: 0, opened: false, painted: false, t: 0, running: false, done: false };
+	// painted: the take reached the start and settled. pos: how far it applied the log.
+	const state = { scene: null, track: [], start: 0, end: 0, painted: false, failed: null, t: 0, sent: -Infinity, pos: -Infinity, running: false, done: false };
 	let win = null;
 	let slow = 1;
 	let wall0 = 0;
@@ -86,20 +93,31 @@ const SCRIPT = `
 		return lo;
 	}
 
+	// The pointer's path, out of the log: moves, presses, releases, leaving.
+	function trackOf(log) {
+		const out = [];
+		let x = -1, y = -1;
+		for (const e of log) {
+			if (e.k === "move") { x = e.x; y = e.y; out.push([e.t, x, y, 0]); }
+			else if (e.k === "down" && e.b === 0) { x = e.x; y = e.y; out.push([e.t, x, y, 1]); }
+			else if (e.k === "up" && e.b === 0) { x = e.x; y = e.y; out.push([e.t, x, y, 2]); }
+			else if (e.k === "out") out.push([e.t, x, y, 3]);
+		}
+		return out;
+	}
+
+	function until(t) {
+		if (t > state.sent) { state.sent = t; send({ type: "until", t }); }
+	}
+
 	function draw(t) {
-		const track = state.scene.pointer;
+		const track = state.track;
 		const i = pointerAt(track, t);
 		const a = track[i];
 		if (!a || a[3] === 3) cursor.style.opacity = "0";
 		else {
-			// Samples come at frame rate: easing between them hides the jitter.
-			const b = track[i + 1];
-			let x = a[1], y = a[2];
-			if (b && b[3] !== 3 && b[0] > a[0]) {
-				const k = Math.min(1, (t - a[0]) / (b[0] - a[0]));
-				x += (b[1] - x) * k;
-				y += (b[2] - y) * k;
-			}
+			// Where the last applied sample put it, never on the way to one the app hasn't had.
+			const x = a[1], y = a[2];
 			cursor.style.opacity = "1";
 			cursor.style.transform = "translate(" + x + "px, " + y + "px)";
 			cursor.dataset.down = a[3] === 1 ? "1" : "0";
@@ -131,11 +149,11 @@ const SCRIPT = `
 	function frame() {
 		requestAnimationFrame(frame);
 		if (!state.running) return;
-		const t = Math.min(state.end, state.start + (Date.now() - wall0) / slow);
-		state.t = t;
-		send({ type: "tick", t });
-		draw(t);
-		if (t >= state.end) { state.running = false; state.done = true; }
+		const t = Math.min(state.end, state.start + (Date.now() - wall0) / slow, state.pos + ${LEAD_MS});
+		if (t > state.t) state.t = t;
+		until(state.t);
+		draw(Math.max(state.start, state.pos));
+		if (state.pos >= state.end) { state.running = false; state.done = true; }
 	}
 
 	window.addEventListener("message", (ev) => {
@@ -143,14 +161,20 @@ const SCRIPT = `
 		if (!m || m.tape !== "tape" || m.take !== "${TAKE}") return;
 		if (m.type === "hello") {
 			const scene = { ...state.scene, storage: { local: { ...(state.scene.storage?.local ?? {}), ...cfg.storage } } };
-			send({ type: "scene", scene, input: cfg.input });
-		} else if (m.type === "open" && !state.opened) {
-			state.opened = true;
+			send({ type: "scene", scene, input: cfg.input, waive: [], watch: [] });
+			// A render always plays: the take's deadlines count from the start.
+			send({ type: "run", on: true });
 			// Everything before the start plays at once, so the take opens on the state it had there.
-			state.t = Math.max(state.start, state.scene.sockets[0]?.open ?? 0);
-			send({ type: "tick", t: state.t });
-			draw(state.t);
-		} else if (m.type === "painted") state.painted = true;
+			state.t = state.start;
+			until(state.t);
+		} else if (m.type === "pos") {
+			state.pos = m.t;
+			if (!state.painted && m.idle && m.settled && m.t >= state.start) {
+				state.painted = true;
+				draw(state.start);
+			}
+		} else if (m.type === "fail") state.failed = m.reason;
+		else if (m.type === "gone") state.failed = "the take's page unloaded (" + m.why + ")";
 	});
 
 	window.__tape = {
@@ -158,7 +182,9 @@ const SCRIPT = `
 		/** Load the scene and boot the app. */
 		async load() {
 			const scene = await (await fetch(cfg.scene)).json();
+			if (scene.tape !== 2) throw new Error("tape: scene version " + scene.tape + ", record it again");
 			state.scene = scene;
+			state.track = trackOf(scene.log);
 			state.start = Math.max(0, scene.meta.start ?? 0);
 			state.end = Math.max(state.start, Math.min(scene.meta.duration, scene.meta.end ?? scene.meta.duration));
 			const vp = scene.meta.viewport;
@@ -170,6 +196,10 @@ const SCRIPT = `
 			frame.style.width = vp.width + "px";
 			frame.style.height = vp.height + "px";
 			frame.tabIndex = -1;
+			frame.setAttribute("sandbox", "${SANDBOX}");
+			frame.setAttribute("data-tape-take", "");
+			frame.name = "tape-take";
+			frame.inert = true;
 			frame.src = cfg.app + "#${TAKE_KEY}=${TAKE}";
 			stage.prepend(frame);
 			win = frame.contentWindow;

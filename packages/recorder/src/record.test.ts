@@ -56,25 +56,34 @@ describe("record", () => {
 		expect(await page.text()).toContain(`<head><script src="${INJECT_PATH}"></script>`);
 
 		const events = await open(`${base.replace("http", "ws")}/__tape/events`);
-		events.send(
-			JSON.stringify({
-				type: "hello",
-				url: `${base}/`,
-				path: "/",
-				viewport: { width: 800, height: 600, dpr: 2 },
-				userAgent: "test",
-				local: { theme: "dark" },
-			}),
-		);
+		const say = (m: unknown) => events.send(JSON.stringify(m));
+		say({
+			type: "hello",
+			url: `${base}/`,
+			path: "/",
+			viewport: { width: 800, height: 600, dpr: 2 },
+			userAgent: "test",
+			local: { theme: "dark" },
+			seed: 7,
+			epoch: 1_700_000_000_000.4,
+		});
 		const got: unknown[] = [];
 		const ws = await open(`${base.replace("http", "ws")}/ws`);
 		ws.on("message", (d, binary) => got.push(binary ? [...(d as Buffer)] : String(d)));
 		await settle();
 		ws.send(Buffer.from([7, 8, 9]));
 		await new Promise((r) => setTimeout(r, 400));
-		events.send(JSON.stringify({ type: "p", k: 0, x: 10, y: 20 }));
-		events.send(JSON.stringify({ type: "p", k: 1, x: 10, y: 20 }));
-		events.send(JSON.stringify({ type: "nav", mode: "push", path: "/a" }));
+		// What the page's inject script reports, in the page's order.
+		say({ type: "sock", s: 0, url: "/ws" });
+		say({ type: "e", e: { t: 500, k: "open", s: 0 } });
+		say({ type: "e", e: { t: 510, k: "msg", s: 0, d: "AQID" } });
+		say({ type: "e", e: { t: 520, k: "msg", s: 0, d: "hello", x: 1 } });
+		say({ type: "e", e: { t: 900, k: "move", x: 10, y: 20 } });
+		say({
+			type: "e",
+			e: { t: 950, k: "down", x: 10, y: 20, b: 0, m: 0, h: { p: "1/0", n: "button" } },
+		});
+		say({ type: "e", e: { t: 960, k: "nav", path: "/a", mode: "push" } });
 		await settle();
 		ws.close();
 		events.close();
@@ -87,26 +96,18 @@ describe("record", () => {
 		expect(saved).not.toBeNull();
 		const scene = parseScene(readFileSync(out, "utf8"));
 		expect(scene.meta.viewport).toEqual({ width: 800, height: 600, dpr: 2 });
+		expect(scene.meta.seed).toBe(7);
+		expect(scene.meta.epoch).toBe(1_700_000_000_000);
 		expect(scene.storage.local).toEqual({ theme: "dark" });
-		expect(scene.sockets).toHaveLength(1);
-		expect(scene.sockets[0]?.url).toBe("/ws");
-		// Closed by the client, so not part of the take.
-		expect(scene.sockets[0]?.close).toBeUndefined();
-		// Starts just before the pointer does.
-		expect(scene.meta.start).toBeGreaterThan(0);
-		expect(scene.meta.start).toBeLessThan(scene.pointer[0]?.[0] ?? 0);
-		expect(scene.frames.map((f) => (f.x ? f.d : [...base64ToBytes(f.d)]))).toEqual([
-			[1, 2, 3],
-			"hello",
-			[9, 8, 7],
-		]);
-		expect(scene.pointer.map((p) => p.slice(1))).toEqual([
-			[10, 20, 0],
-			[10, 20, 1],
-		]);
-		expect(scene.nav.map((n) => n.path)).toEqual(["/a"]);
-		const times = [...scene.frames.map((f) => f.t), ...scene.pointer.map((p) => p[0])];
-		expect(Math.max(...times)).toBeLessThan(scene.meta.duration);
+		expect(scene.sockets).toEqual([{ url: "/ws" }]);
+		expect(scene.log.map((e) => e.k)).toEqual(["open", "msg", "msg", "move", "down", "nav"]);
+		const msgs = scene.log.flatMap((e) =>
+			e.k === "msg" ? [e.x ? e.d : [...base64ToBytes(e.d)]] : [],
+		);
+		expect(msgs).toEqual([[1, 2, 3], "hello"]);
+		// Starts just before the pointer does, ends a little after the last entry.
+		expect(scene.meta.start).toBe(600);
+		expect(scene.meta.duration).toBeGreaterThan(960);
 	});
 
 	it("starts a new take on reload", async () => {

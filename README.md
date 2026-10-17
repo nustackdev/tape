@@ -2,7 +2,7 @@
 
 Record a websocket UI session, replay it anywhere.
 
-Tape puts a proxy in front of a running app, logs what the server sends over its sockets plus what the pointer does, and writes it all to one `scene.json`. The player then runs the real app bundle in an iframe with `window.WebSocket` swapped for a fake that replays the scene, a cursor drawn on top. No screenshots, no video: the app on the page is the real one.
+Tape puts a proxy in front of a running app and a script in its page that logs, in the page's own order, what the server sends over its sockets and what the pointer and keys do, all into one `scene.json`. The player then runs the real app bundle in an iframe with `window.WebSocket` swapped for a fake that replays the scene, a cursor drawn on top. No screenshots, no video: the app on the page is the real one.
 
 Works for any UI driven by a websocket. Frames are opaque bytes, tape never reads them.
 
@@ -29,7 +29,7 @@ npm i -D @nustackdev/tape-render   # mp4 and gif, needs ffmpeg
 tape record http://127.0.0.1:8080 -o hero.json
 ```
 
-Open the printed url, click around, ctrl+c to save. A reload starts a new take. Then cut it:
+Open the printed url, click around, ctrl+c to save. A reload starts a new take. Record in a browser profile without extensions: one that adds elements to the page shifts the element paths the replay checks against. Then cut it:
 
 ```bash
 tape info hero.json
@@ -48,10 +48,13 @@ tape bundle path/to/dist -o public/scenes/app --base /scenes/app/
 
 This copies the build, points its root absolute urls under `--base` (html, css, vite's preload helper) and makes its module scripts inert, so the shim can start them once the scene is in. The app's source is never touched.
 
+The replay runs in a sandboxed frame of its own, an opaque origin, so the bundle is fetched cross origin: serve it with `Access-Control-Allow-Origin: *`. GitHub Pages does; a dev server needs the header (vite: `server.headers`). A host that can't send it passes `sameOrigin` to `Tape.Root`.
+
 ## Play
 
 ```tsx
 import { LiveScene } from "@nustackdev/tape-player";
+import "@nustackdev/tape-player/tape.css";
 
 <LiveScene app="/scenes/app/index.html" scene="/scenes/hero.json" aspect={16 / 10} />
 ```
@@ -138,11 +141,16 @@ Also `--start`/`--end` to cut, `--speed`, `--lead`/`--hold` to hold the first an
 
 ## What replays
 
-- every server frame, on its recorded time, per socket. sockets are matched by url in open order, so a reconnect in the take replays as one
-- the input, as DOM events fed into the app: clicks, keys, drags, scrolls. so local UI plays too: menus open, fields fill, hover buttons show
-- client side navigation, as a fallback when the replayed click didn't cause it
+One log, played in order by one loop inside the frame (see [the kernel](packages/player/KERNEL.md)):
+
+- every server frame, in the order the page got it relative to the input, per socket. sockets are matched by creation order, so a reconnect in the take replays as one
+- the input, as DOM events fed into the app: clicks, keys, drags, scrolls. so local UI plays too: menus open, fields fill, hover buttons show. each waits until its target is there, the same element the take recorded, and keys until focus is where it was
+- what the app sends, as a check: the server's reply reaches the app only after the replayed app sent what it sent in the take
+- the app's navigation, on a history of its own: the take never touches the tab's history, and nothing in it can navigate the page or itself
 - localStorage at load, as a private copy
-- the pointer, as a drawn cursor with click ripples
+- the pointer, as a drawn cursor with click ripples, drawn at what the app has been fed so far: a slow device slows the replay, it never falls out of step
+
+A take that can't go on (a target that never shows) is replaced by a fresh one from the same point.
 
 Browsers don't let a script do everything a real user does, so the shim fills in:
 
@@ -150,11 +158,11 @@ Browsers don't let a script do everything a real user does, so the shim fills in
 - **hover and focus styles** come from copies of the app's `:hover` and `:focus` rules, keyed to attributes the shim sets
 - **typing** is done by hand, as a browser's default action: `beforeinput`, the change if nobody cancelled it, `input`. Not through the browser's editor: Firefox's scrolls the page around the frame to its caret. Fields are reset to their recorded value as they go
 - **scroll** positions are recorded and set, pointer capture is patched for drags, and the app's `scrollIntoView` scrolls only inside the frame, never the page around it
-- **select all** on Cmd/Ctrl+A is done by hand, like typing
+- **select all** on Cmd/Ctrl+A is done by hand, like typing, on the focused field or editable only, never the page
 - **randomness and time** are shared with the take: `Math.random` and `crypto` draw from one seeded generator, and `Date` reads what it read in the take while each event is handled. so ids the app mints in the browser come out the same as the ones the server frames name
 - **hover** follows the page changing under a pointer that stands still, as in a browser
 
-What the app sends goes nowhere. Links and form submits never navigate the replay. `input={false}` on `<LiveScene>` plays server frames only.
+What the app sends goes nowhere. Links, form submits, `location` and reloads never navigate the replay, windows and dialogs never open, and the visitor's own pointer and keys never reach it. `input={false}` on `<LiveScene>` (or `Tape.Root`) plays server frames only.
 
 The recorder logs every key, so record in a session with nothing secret in it. While recording, the page's `Math.random` and `crypto` come from the seeded generator, so don't record anything that needs real randomness.
 
