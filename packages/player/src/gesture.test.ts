@@ -43,7 +43,7 @@ describe("gestures", () => {
 		expect(mapPoint(250, 50, [100, 48, 200, 4], [130, 60, 220, 4])).toEqual([295, 62]);
 	});
 
-	it("leaves a point as recorded when the box, stored to 0.1px, is the same box now", () => {
+	it("leaves a point as recorded when the box, stored rounded, is the same box now", () => {
 		// The training pad: recorded at top 408.3, it measures 408.28125. Mapped through
 		// the rounded box the stroke would move up 0.019px, and the app, normalizing to
 		// four decimals, sent 0.2199 where the take sent 0.22.
@@ -55,6 +55,25 @@ describe("gestures", () => {
 		// A box stored at full precision is mapped exactly, by however little it moved.
 		const [, my] = mapPoint(435.6, y, [346, 408.28125, 280, 280], [346, 408.29999, 280, 280]);
 		expect(Math.round(((my - 408.29999) / 280) * 1e4) / 1e4).toBe(0.22);
+		// Stored to 0.001px: the training pad again, top 408.28125 stored as 408.281.
+		// Its recorded pointer y is float32, just below the 4 decimal boundary of
+		// what the app computes; mapped through 408.281 it moved 0.00025px and
+		// crossed it, sending 0.1738 where the take sent 0.1737.
+		const fy = Math.fround(456.93125);
+		const norm = (v: number) => Math.round(((v - 408.28125) / 280) * 1e4) / 1e4;
+		const [fx2, fy2] = mapPoint(452.4, fy, [346, 408.281, 280, 280], [346, 408.28125, 280, 280]);
+		expect([fx2, fy2]).toEqual([452.4, fy]);
+		expect(norm(fy2)).toBe(0.1737);
+		// Firefox lays the pad out on its 1/60px grid, at 408.2833: mapped through the
+		// box put back on Chromium's 1/64px grid (408.28125), the app's value holds.
+		const ff = Math.fround(408 + 17 / 60);
+		const [, gy] = mapPoint(452.4, fy, [346, 408.281, 280, 280], [346, ff, 280, 280]);
+		expect(Math.round(((gy - ff) / 280) * 1e4) / 1e4).toBe(0.1737);
+		// Stored exact and the same now: the point is untouched.
+		expect(mapPoint(452.4, fy, [346, 408.28125, 280, 280], [346, 408.28125, 280, 280])).toEqual([
+			452.4,
+			fy,
+		]);
 		// And a rounded box that really moved is still mapped.
 		expect(mapPoint(350, 410, [346, 408.3, 280, 280], [356, 408.3, 280, 280])).toEqual([360, 410]);
 	});

@@ -148,13 +148,19 @@ for each entry e, in order:
   out a few pixels off; mapped, the pointer is at the same fraction along it,
   and the slider ends on its recorded value. (Seen: a Chromium take of the
   nuspace slider, replayed in Firefox at raw pixels, never sent the value the
-  take sent.) Boxes are recorded to 0.001px. Takes recorded before that have
-  them to 0.1px; where such a box rounds to what the element measures now, the
-  point stays as recorded, since mapping through the rounded box would move it
-  by the rounding (seen: the training pad's stroke, normalized by the app to
-  four decimals, sent 0.2199 for 0.22). A 0.1px take of a layout that differs
-  by less than the rounding (Firefox lays that pad 0.019px lower) can't be
-  mapped exactly; record it again.
+  take sent.) Boxes are recorded exact. Takes recorded before that have them
+  to 0.1px or 0.001px. Mapped through as stored, a box moves the point by its
+  rounding, and pointer coordinates are float32 and often sit right below a
+  rounding boundary of what the app computes, so even 0.00025px counts (seen:
+  the training pad, top 408.28125 stored as 408.281, normalized by the app to
+  four decimals, sent 0.1738 for 0.1737, in all three engines). So a 0.001px
+  value is put back on the layout grid it was measured on, 1/64px (Chromium,
+  WebKit) or 1/60px (Firefox), the one point of either within the rounding,
+  and maps exactly from there. A box that rounds to what the element measures
+  now is the same box: the point stays as recorded. A 0.1px box can't be put
+  back (several grid points are within its rounding); a 0.1px take of a layout
+  that differs by less than the rounding (Firefox lays the pad 0.002px lower)
+  can't be mapped exactly; record it again.
 - **the app's own back and forward** are held: `history.back()` queues, and
   the replay performs it, firing popstate, where the log has its `nav pop`
   entry. So the app sees the traversal in the order the take had it, not a

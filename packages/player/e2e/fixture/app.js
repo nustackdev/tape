@@ -50,3 +50,24 @@ document.getElementById("go").addEventListener("click", (e) => {
 	history.pushState({ n: 1 }, "", "/two");
 	note("nav");
 });
+// A drawing pad: each point normalized to its box, to four decimals, sent on release.
+const pad = document.getElementById("pad");
+let stroke = null;
+const point = (e) => {
+	const r = pad.getBoundingClientRect();
+	const n = (v) => Math.round(v * 1e4) / 1e4;
+	return [n((e.clientX - r.left) / r.width), n((e.clientY - r.top) / r.height)];
+};
+pad.addEventListener("pointerdown", (e) => {
+	stroke = [point(e)];
+});
+pad.addEventListener("pointermove", (e) => {
+	if (stroke) stroke.push(point(e));
+});
+pad.addEventListener("pointerup", () => {
+	if (!stroke) return;
+	const d = `pad:${JSON.stringify(stroke)}`;
+	note(d);
+	ws.send(d);
+	stroke = null;
+});

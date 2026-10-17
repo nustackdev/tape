@@ -56,22 +56,41 @@ export function gestures(log: readonly Entry[]): Map<number, Gesture> {
 	return out;
 }
 
-/** A box value as recorders before full precision stored it: to 0.1px. */
-const tenth = (v: number) => Math.round(v * 10) / 10;
+/** Box values as recorders stored them before keeping them exact: to 0.1px, then to 0.001px. */
+const GRIDS = [10, 1000];
+
+/**
+ * A box value stored to 0.001px, back on the layout grid it was measured on:
+ * 1/64px (Chromium, WebKit) or 1/60px (Firefox). Spaced 0.0156px and 0.0167px
+ * apart, at most one point of either grid is within the rounding. Anything else
+ * is returned as it is.
+ */
+function unround(v: number): number {
+	if (Math.round(v * 1000) / 1000 !== v) return v;
+	for (const unit of [64, 60]) {
+		const s = Math.round(v * unit) / unit;
+		if (Math.abs(s - v) <= 0.0005 + 1e-9) return s;
+	}
+	return v;
+}
 
 /**
  * Map a point of the take through `from` (the box then) onto `to` (the box now).
- * A box stored to 0.1px that rounds to what the element measures now is the same
- * box: the point stays as recorded. Mapped through the rounded box it would move
- * by the rounding, up to 0.05px, enough to change what an app computes from it
- * (seen: a drawing pad's stroke, normalized to 4 decimals, sent other points).
+ * Box values stored rounded move the point by the rounding when mapped through
+ * as they are: 0.00025px for a top of 408.28125 stored as 408.281. Pointer
+ * coordinates are float32 and sit right below the boundaries of what an app
+ * rounds them to, so even that changes what it computes: a drawing pad
+ * normalizing to 4 decimals sent 0.1738 for a recorded 0.1737. So a 0.001px
+ * value is put back on its layout grid first, and a box that rounds to what the
+ * element measures now is the same box: the point stays as recorded.
  */
 export function mapPoint(x: number, y: number, from: Box, to: Box): [number, number] {
-	const coarse = from.every((v) => tenth(v) === v);
-	if (coarse && to.every((v, i) => tenth(v) === from[i])) return [x, y];
-	const sx = from[2] > 0 ? to[2] / from[2] : 1;
-	const sy = from[3] > 0 ? to[3] / from[3] : 1;
-	return [to[0] + (x - from[0]) * sx, to[1] + (y - from[1]) * sy];
+	const exact = from.map(unround) as Box;
+	const same = (g: number) => to.every((v, i) => Math.round(v * g) / g === from[i]);
+	if (to.every((v, i) => v === exact[i]) || GRIDS.some(same)) return [x, y];
+	const sx = exact[2] > 0 ? to[2] / exact[2] : 1;
+	const sy = exact[3] > 0 ? to[3] / exact[3] : 1;
+	return [to[0] + (x - exact[0]) * sx, to[1] + (y - exact[1]) * sy];
 }
 
 /** The path of the element `depth` levels above the one at `p`. */

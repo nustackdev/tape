@@ -11,8 +11,10 @@
 			#ed { position: absolute; left: 0; top: 150px; width: 200px; }
 			#out { position: absolute; left: 0; top: 200px; }
 			#far { position: absolute; left: 0; top: 2000px; }
+			/* A drawing pad off the layout grid: its top measures 200.28125 in every engine. */
+			#pad { position: absolute; left: 300px; top: 200px; width: 100px; height: 100px; transform: translateY(0.28125px); }
 		</style>
 		<script type="text/x-tape-module" src="/app/app.js"></script>
 	</head>
-	<body><button id="ask" type="button">Ask</button><a id="go" href="/two">Go</a><input id="f" placeholder="name"><div id="ed" contenteditable="true">some text</div><p id="out"></p><dialog id="dlg"><input id="in-dlg"></dialog><p id="far">far below</p></body>
+	<body><button id="ask" type="button">Ask</button><a id="go" href="/two">Go</a><input id="f" placeholder="name"><div id="ed" contenteditable="true">some text</div><p id="out"></p><dialog id="dlg"><input id="in-dlg"></dialog><p id="far">far below</p><div id="pad"></div></body>
 </html>

@@ -32,9 +32,11 @@ function targets() {
 	return {
 		ask: of("ask"),
 		go: of("go"),
+		pad: of("pad"),
 		sent: T.digest("ask"),
 		ping: T.digest("ping"),
 		bytes: T.digest(ask),
+		digest: (d: string) => T.digest(d),
 	};
 }
 
@@ -116,6 +118,46 @@ function burstScene(): Scene {
 	};
 }
 
+/**
+ * A stroke on the fixture's pad, recorded with the pad's box rounded to 0.001px
+ * as recorders stored it (top 200.28125 as 200.281). The points are float32, as
+ * browsers report pointer coordinates, each right below a boundary of the app's
+ * four decimal rounding: moved by the box's rounding (0.00025px), every one of
+ * them sends another value. The replay must hand the app the recorded points.
+ */
+function padScene(): Scene & { drawn: string } {
+	const s = scene();
+	const t = targets();
+	const top = 200.28125;
+	const pts = [1501, 2501, 3501, 4501, 5501, 6502].map(
+		(k, i) => [Math.fround(325.5 + i * 7.25), Math.fround(top + (k + 0.5) / 100)] as const,
+	);
+	const n = (v: number) => Math.round(v * 1e4) / 1e4;
+	const sent = pts.map(([x, y]) => [n((x - 300) / 100), n((y - top) / 100)]);
+	const [first, ...rest] = pts as unknown as [number, number][];
+	const [fx, fy] = first as [number, number];
+	const [lx, ly] = rest[rest.length - 1] as [number, number];
+	const bx: [number, number, number, number][] = [
+		[300, 200.281, 100, 100],
+		[0, 0, 640, 400],
+	];
+	const drawn = `pad:${JSON.stringify(sent)}`;
+	return {
+		...s,
+		drawn,
+		log: [
+			{ t: 100, k: "open", s: 0 },
+			{ t: 110, k: "msg", s: 0, d: "hello", x: 1 },
+			{ t: 500, k: "move", x: fx, y: fy },
+			{ t: 600, k: "down", x: fx, y: fy, b: 0, m: 0, h: t.pad, bx },
+			...rest.map(([x, y], i) => ({ t: 620 + i * 20, k: "move", x, y }) as Entry),
+			{ t: 800, k: "up", x: lx, y: ly, b: 0, m: 0, h: t.pad },
+			{ t: 802, k: "send", s: 0, h: t.digest(drawn) },
+			{ t: 1400, k: "move", x: 10, y: 60 },
+		],
+	};
+}
+
 let server: http.Server;
 let origin = "";
 /** TAPE_E2E_KEEP=1: the server stays up, its url on stderr, for poking at by hand. */
@@ -145,6 +187,7 @@ beforeAll(async () => {
 		"/app/tape-shim.js": ["text/javascript", await bundle("../src/shim.ts", "iife")],
 		"/scene.json": ["application/json", JSON.stringify(scene())],
 		"/burst.json": ["application/json", JSON.stringify(burstScene())],
+		"/pad.json": ["application/json", JSON.stringify(padScene())],
 	};
 	server = http.createServer((req, res) => {
 		const p = new URL(req.url ?? "/", "http://x").pathname;
@@ -483,6 +526,17 @@ for (const [name, type] of engines) {
 			expect(await page.evaluate(() => window.scrollY)).toBe(60);
 			expect(await page.evaluate(() => document.activeElement?.id ?? "")).toBe(had);
 			expect(await page.evaluate(() => document.activeElement?.tagName)).not.toBe("IFRAME");
+			await page.close();
+		}, 40_000);
+
+		it("hands a drawing pad the stroke as recorded, to the fraction of a pixel", async () => {
+			const { page, warnings } = await open("?scene=pad");
+			const { drawn } = padScene();
+			const events = await until(page, drawn);
+			expect(events.filter((e) => e.startsWith("pad:"))).toEqual([drawn]);
+			// The take went on past the send: it matched, nothing failed.
+			await page.waitForTimeout(1500);
+			expect(warnings).toEqual([]);
 			await page.close();
 		}, 40_000);
 

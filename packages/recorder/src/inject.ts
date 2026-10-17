@@ -189,15 +189,16 @@ export const INJECT_SCRIPT = `(() => {
 		if (first instanceof Element && first.getRootNode() === document) return first;
 		return e.target instanceof Element ? e.target : null;
 	};
-	// The boxes of an element and its ancestors, innermost first. To 0.001px: the
-	// replay maps a gesture's points through them, and an app may compute from those
-	// points to four decimals (a drawing pad); 0.1px moved them that much.
+	// The boxes of an element and its ancestors, innermost first. Exact, never
+	// rounded: the replay maps a gesture's points through them, and an app may
+	// compute from those points to four decimals (a drawing pad). Rounded to
+	// 0.001px, a top of 408.28125 moved the stroke 0.00025px, and that changed
+	// points. Layout units are 1/64px or 1/60px, so the values stay short.
 	const boxes = (el) => {
 		const out = [];
-		const r1 = (v) => Math.round(v * 1000) / 1000;
 		for (let x = el; x && x !== document.documentElement; x = x.parentElement) {
 			const r = x.getBoundingClientRect();
-			out.push([r1(r.left), r1(r.top), r1(r.width), r1(r.height)]);
+			out.push([r.left, r.top, r.width, r.height]);
 		}
 		return out;
 	};
