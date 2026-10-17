@@ -37,6 +37,7 @@ import { SendLedger } from "./ledger";
 import { type Body, isTape, TAG, TAKE_KEY, type ToParent, type ToShim } from "./protocol";
 import { installPseudo } from "./pseudo";
 import { installScroll } from "./scroll";
+import { dropStray, installSelection } from "./selection";
 
 const DEFERRED_TYPE = "text/x-tape-module";
 /**
@@ -298,17 +299,8 @@ declare global {
 			if (e.isTrusted) post({ type: "gone", why: type });
 		});
 	}
-	// A selection outside what the replay is editing (a stray select all, find in page) is dropped.
-	document.addEventListener("selectionchange", () => {
-		const sel = document.getSelection();
-		if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
-		const host = activeElement();
-		if (host && isField(host) && sel.toString() === "") return;
-		if (host && sel.anchorNode && sel.focusNode) {
-			if (host.contains(sel.anchorNode) && host.contains(sel.focusNode)) return;
-		}
-		sel.removeAllRanges();
-	});
+	// Nothing is selected but what the replay is editing.
+	installSelection();
 
 	// Time the take was playing on a visible page: deadlines count only that, so a
 	// paused, off screen or hidden take trips none. The host says when it plays.
@@ -387,8 +379,10 @@ declare global {
 			const n = mutations;
 			await frame();
 			quiet = mutations === n ? quiet + 1 : 0;
-			if (performance.now() - start > SETTLE_MAX_MS) return;
+			if (performance.now() - start > SETTLE_MAX_MS) break;
 		}
+		// A backstop for a selection that got past the guards.
+		dropStray();
 	};
 	const change = () =>
 		new Promise<void>((r) => {
