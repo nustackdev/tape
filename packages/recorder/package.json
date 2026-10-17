@@ -1,7 +1,7 @@
 {
 	"name": "@nustackdev/tape",
 	"description": "The tape CLI: record a websocket UI session through a proxy, prepare an app bundle for replay.",
-	"version": "0.3.0",
+	"version": "0.3.1",
 	"license": "Apache-2.0",
 	"repository": {
 		"type": "git",
