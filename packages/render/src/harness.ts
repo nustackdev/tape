@@ -8,13 +8,18 @@
 // The clock runs on wall time divided by `slow`, so a machine that captures
 // few frames a second still gets a smooth take: the renderer slows the page's
 // CSS animations by the same factor and plays the frames back that much faster.
+// It only moves while the take keeps up with it: a take waiting on the app
+// stops the clock too, so the wait costs no take time and nothing is skipped
+// once it goes on.
 
 /** The url hash key the take id travels in, as the player shim reads it. */
 const TAKE_KEY = "tape-take";
 /** The iframe's sandbox, as the player has it: an opaque origin. The server sends CORS headers for it. */
 const SANDBOX = "allow-scripts allow-forms";
-/** The clock runs at most this far ahead of what the take applied, ms of the take. */
-const LEAD_MS = 250;
+/** The clock stands still while the take is further behind it than this, ms of the take. */
+const BEHIND_MS = 40;
+/** The most the clock moves in one animation frame, ms of the take. */
+const STEP_MS = 100;
 
 export interface HarnessConfig {
 	/** Url of the bundle's index.html. */
@@ -149,8 +154,10 @@ const SCRIPT = `
 	function frame() {
 		requestAnimationFrame(frame);
 		if (!state.running) return;
-		const t = Math.min(state.end, state.start + (Date.now() - wall0) / slow, state.pos + ${LEAD_MS});
-		if (t > state.t) state.t = t;
+		const now = Date.now();
+		const dt = Math.min(${STEP_MS}, (now - wall0) / slow);
+		wall0 = now;
+		if (state.pos >= state.t - ${BEHIND_MS}) state.t = Math.min(state.end, state.t + dt);
 		until(state.t);
 		draw(Math.max(state.start, state.pos));
 		if (state.pos >= state.end) { state.running = false; state.done = true; }
@@ -220,7 +227,7 @@ const SCRIPT = `
 				arm();
 			});
 		},
-		/** Start the clock: from now, one ms of the take per slow ms of wall time. Returns the wall start. */
+		/** Start the clock: from now, one ms of the take per slow ms of wall time while the take keeps up. Returns the wall start. */
 		run(factor) {
 			slow = factor;
 			wall0 = Date.now();
